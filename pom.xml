@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>com.github.litesql</groupId>
+	<artifactId>jdbc-ha</artifactId>
+	<version>1.0.0-SNAPSHOT</version>
+
+	<name>HA JDBC Driver</name>
+	<description>HA JDBC driver dbeaver compatible</description>
+	<url>https://github.com/litesql/jdbc-ha</url>
+	<properties>
+		<java.version>${java.version.drivers}</java.version>
+	</properties>
+
+	<parent>
+		<groupId>com.dbeaver.common</groupId>
+		<artifactId>com.dbeaver.common.main</artifactId>
+		<version>2.4.0-SNAPSHOT</version>
+		<relativePath>../dbeaver-common</relativePath>
+	</parent>
+
+	<packaging>eclipse-plugin</packaging>
+
+	<profiles>
+		<profile>
+			<id>sonatypeDeploy</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.sonatype.central</groupId>
+						<artifactId>central-publishing-maven-plugin</artifactId>
+						<extensions>true</extensions>
+						<configuration>
+							<publishingServerId>central</publishingServerId>
+							<autoPublish>false</autoPublish>
+							<waitUntil>validated</waitUntil>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
+
+	<licenses>
+		<license>
+			<name>The Apache Software License, Version 2.0</name>
+			<url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+			<distribution>repo</distribution>
+		</license>
+	</licenses>
+
+	<developers>
+		<developer>
+			<name>Walter Wanderley</name>
+			<email>walterwanderley@gmail.com</email>
+			<url>https://github.com/walterwanderley</url>
+			<organization>LiteSQL</organization>
+			<organizationUrl>https://github.com/litesql</organizationUrl>
+		</developer>
+	</developers>
+
+	<scm>
+		<connection>scm:git:git@github.com:litesql/jdbc-ha.git</connection>
+		<developerConnection>scm:git:git@github.com:litesql/jdbc-ha.git</developerConnection>
+		<url>git@github.com:litesql/jdbc-ha.git</url>
+	</scm>
+
+	<dependencies>
+		<dependency>
+			<groupId>com.dbeaver.common</groupId>
+			<artifactId>org.jkiss.utils</artifactId>
+			<scope>compile</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.dbeaver.common</groupId>
+			<artifactId>com.dbeaver.jdbc.api</artifactId>
+			<scope>compile</scope>
+		</dependency>
+		<dependency>
+			<groupId>build.buf.gen</groupId>
+			<artifactId>litesql_sqlite-ha_grpc_java</artifactId>
+			<version>1.78.0.1.20260110202014.9b378ae49587</version>
+		</dependency>
+		<dependency>
+			<groupId>io.grpc</groupId>
+			<artifactId>grpc-netty-shaded</artifactId>
+			<version>1.78.0</version>
+		</dependency>
+		<dependency>
+			<groupId>com.google.protobuf</groupId>
+			<artifactId>protobuf-java</artifactId>
+			<version>4.33.1</version> <!-- or latest 4.x -->
+		</dependency>
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter-engine</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.junit.platform</groupId>
+			<artifactId>junit-platform-runner</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+
+	<build>
+		<sourceDirectory>${project.basedir}/src/main/java</sourceDirectory>
+		<testSourceDirectory>${project.basedir}/src/test/java</testSourceDirectory>
+		<plugins>
+			<plugin>
+				<groupId>org.eclipse.tycho</groupId>
+				<artifactId>tycho-compiler-plugin</artifactId>
+				<version>${tycho-version}</version>
+				<configuration>
+					<useProjectSettings>false</useProjectSettings>
+					<source>${java.version.min}</source>
+					<target>${java.version.min}</target>
+					<compilerVersion>${java.version.min}</compilerVersion>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>test</id>
+						<phase>test</phase>
+						<goals>
+							<goal>test</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-dependency-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>copy-dependencies</id>
+						<phase>prepare-package</phase>
+						<goals>
+							<goal>copy-dependencies</goal>
+						</goals>
+						<configuration>
+							<outputDirectory>${project.build.directory}/dist</outputDirectory>
+							<includeScope>runtime</includeScope>
+							<stripClassifier>com.github.litesql.jdbc.driver.ha</stripClassifier>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-resources-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>assemble-driver-dist</id>
+						<phase>package</phase>
+						<configuration>
+							<outputDirectory>${project.build.directory}/dist</outputDirectory>
+							<overwrite>true</overwrite>
+							<resources>
+								<resource>
+									<directory>${project.build.directory}</directory>
+									<includes>
+										<include>*.jar</include>
+									</includes>
+								</resource>
+							</resources>
+						</configuration>
+						<goals>
+							<goal>copy-resources</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-shade-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>build-main-jar</id>
+						<configuration>
+							<artifactSet>
+								<excludes>
+									<exclude>junit:junit</exclude>
+									<exclude>jmock:jmock</exclude>
+								</excludes>
+							</artifactSet>
+							<finalName>jdbc-ha-full-${project.version}</finalName>
+						</configuration>
+						<phase>package</phase>
+						<goals>
+							<goal>shade</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+		</plugins>
+	</build>
+
+	<repositories>
+		<repository>
+			<name>Buf Maven Repository</name>
+			<id>buf</id>
+			<url>https://buf.build/gen/maven</url>
+			<releases>
+				<enabled>true</enabled>
+			</releases>
+			<snapshots>
+				<enabled>false</enabled>
+			</snapshots>
+		</repository>
+	</repositories>
+
+</project>

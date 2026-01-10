@@ -1,2 +1,2 @@
-# java-ha
+# jdbc-ha
 JDBC driver for SQLite HA
