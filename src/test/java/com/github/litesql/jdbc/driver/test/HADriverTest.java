@@ -10,7 +10,7 @@ public class HADriverTest {
      */
     public static void main(String[] args) throws Exception {
         long startTime = System.currentTimeMillis();
-        String serverUrl = "http://localhost:5000/chinook.db";
+        String serverUrl = "http://localhost:5001/chinook.db";
         try {
         	if (args.length > 0) {
             serverUrl = args[0];
@@ -22,12 +22,12 @@ public class HADriverTest {
 
                 System.out.println("Query:");
                 try (Statement dbStat = connection.createStatement()) {
-                    try (ResultSet dbResult = dbStat.executeQuery("select rowid, name from Genre")) {
+                    try (ResultSet dbResult = dbStat.executeQuery("select rowid, name from Artist")) {
                         printResultSet(dbResult);
                     }
                 }
                 try (Statement dbStat = connection.createStatement()) {
-                    try (ResultSet dbResult = dbStat.executeQuery("select * from PRAGMA_TABLE_INFO('Genre')")) {
+                    try (ResultSet dbResult = dbStat.executeQuery("select * from PRAGMA_TABLE_INFO('Artist')")) {
                         printResultSet(dbResult);
                     }
                 }

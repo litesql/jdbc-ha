@@ -122,7 +122,7 @@ public class HAClient {
     
     private synchronized QueryResponse send(String sql, Map<Object, Object> parameters, QueryType type) throws SQLException {
     	this.latch = new CountDownLatch(1);
-    	QueryRequest.Builder builder = QueryRequest.newBuilder().setReplicationId(this.replicationID).setSql(sql).setType(QueryType.QUERY_TYPE_UNSPECIFIED);
+    	QueryRequest.Builder builder = QueryRequest.newBuilder().setReplicationId(this.replicationID).setSql(sql).setType(type);
     	
     	if (parameters != null && !parameters.isEmpty()) {
     		boolean indexParameters = isIndexedParams(parameters);    		

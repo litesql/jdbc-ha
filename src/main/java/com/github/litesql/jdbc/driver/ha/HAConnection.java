@@ -16,11 +16,6 @@
  */
 package com.github.litesql.jdbc.driver.ha;
 
-import com.github.litesql.jdbc.driver.ha.client.HAClient;
-import com.dbeaver.jdbc.model.AbstractJdbcConnection;
-import org.jkiss.code.NotNull;
-import org.jkiss.utils.CommonUtils;
-
 import java.io.IOException;
 import java.net.URL;
 import java.sql.DatabaseMetaData;
@@ -28,6 +23,13 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+
+import org.jkiss.code.NotNull;
+
+import com.dbeaver.jdbc.model.AbstractJdbcConnection;
+import com.github.litesql.jdbc.driver.ha.client.HAClient;
 
 public class HAConnection extends AbstractJdbcConnection {
 
@@ -39,6 +41,9 @@ public class HAConnection extends AbstractJdbcConnection {
     private final String url;
     @NotNull
     private final Map<String, Object> driverProperties;
+    
+    private boolean autoCommit;
+    
     private HADatabaseMetaData databaseMetaData;
 
     public HAConnection(
@@ -49,22 +54,72 @@ public class HAConnection extends AbstractJdbcConnection {
         this.driver = driver;
         this.url = url;
         this.driverProperties = driverProperties;
+        this.autoCommit = true;
 
         try {            
             this.client = new HAClient(new URL(url));
         } catch (IOException e) {
             throw new SQLException(e);
         }
-        try {
-            // Verify connection
-            //HAUtils.executeQuery(this, "SELECT 1");
-        } catch (Exception e) {
-            close();
-            throw e;
-        }
     }
 
-    /**
+    @Override
+	public void commit() throws SQLException {
+    	getClient().executeUpdate("COMMIT", null);
+	}
+    
+	@Override
+	public boolean getAutoCommit() throws SQLException {
+		return this.autoCommit;
+	}
+
+	@Override
+	public boolean isValid(int timeout) throws SQLException {
+		if (timeout == 0) {
+			try {
+				getClient().executeQuery("SELECT 1", null);
+			} catch(Exception e) {
+				return false;
+			}
+			return true;
+		}
+		
+		CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
+			try {
+				getClient().executeQuery("SELECT 1", null);
+			} catch(Exception e) {
+				return false;
+			}
+			return true;
+        }).orTimeout(timeout, TimeUnit.SECONDS);
+		
+		try {
+			return future.get().booleanValue();
+		} catch(Exception e) {
+			return false;
+		}
+	}
+
+	@Override
+	public void rollback() throws SQLException {
+		getClient().executeUpdate("ROLLBACK", null);
+	}
+
+	@Override
+	public void setAutoCommit(boolean autoCommit) throws SQLException {
+		if (autoCommit == this.autoCommit) {
+			return;
+		}
+		this.autoCommit = autoCommit;
+		if (autoCommit) {
+			this.commit();
+		} else {
+			getClient().executeUpdate("BEGIN", null);
+		}
+		this.autoCommit = autoCommit;
+	}
+
+	/**
      * Obtain transport client
      */
     public HAClient getClient() {

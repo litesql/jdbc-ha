@@ -16,12 +16,13 @@
  */
 package com.github.litesql.jdbc.driver.ha.client;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class HAExecutionResult {
 	
-	private List<String> columns;
-    private List<Object[]> rows;
+	private List<String> columns = new ArrayList<>();
+    private List<Object[]> rows = new ArrayList<>();
     private long rowsAffected;
 	
 	protected HAExecutionResult(List<String> columns, List<Object[]> rows) {
@@ -30,7 +31,7 @@ public class HAExecutionResult {
 	}
 	
 	protected HAExecutionResult(long rowsAffected) {
-		this.rowsAffected = rowsAffected;
+		this.rowsAffected = rowsAffected;		
 	}
 
     public List<String> getColumns() {
