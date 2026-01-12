@@ -110,8 +110,7 @@ public class HAConnection extends AbstractJdbcConnection {
 	public void setAutoCommit(boolean autoCommit) throws SQLException {
 		if (autoCommit == this.autoCommit) {
 			return;
-		}
-		this.autoCommit = autoCommit;
+		}		
 		if (autoCommit) {
 			this.commit();
 		} else {
