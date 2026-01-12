@@ -11,17 +11,8 @@
 	<description>HA JDBC driver dbeaver compatible</description>
 	<url>https://github.com/litesql/jdbc-ha</url>
 	<properties>
-		<java.version>${java.version.drivers}</java.version>
+		<java.version>17</java.version>
 	</properties>
-
-	<parent>
-		<groupId>com.dbeaver.common</groupId>
-		<artifactId>com.dbeaver.common.main</artifactId>
-		<version>2.4.0-SNAPSHOT</version>
-		<relativePath>../dbeaver-common</relativePath>
-	</parent>
-
-	<packaging>eclipse-plugin</packaging>
 
 	<profiles>
 		<profile>
@@ -112,12 +103,12 @@
 		<dependency>
 			<groupId>com.dbeaver.common</groupId>
 			<artifactId>org.jkiss.utils</artifactId>
-			<scope>compile</scope>
+			<version>2.4.0</version>
 		</dependency>
 		<dependency>
 			<groupId>com.dbeaver.common</groupId>
 			<artifactId>com.dbeaver.jdbc.api</artifactId>
-			<scope>compile</scope>
+			<version>2.4.0</version>
 		</dependency>
 		<dependency>
 			<groupId>build.buf.gen</groupId>
@@ -140,14 +131,14 @@
 			<version>4.33.1</version>
 		</dependency>
 		<dependency>
-			<groupId>org.junit.jupiter</groupId>
+			<groupId>org.junit.jupiter</groupId>	
 			<artifactId>junit-jupiter-engine</artifactId>
-			<scope>test</scope>
+			<version>5.11.0</version>
 		</dependency>
 		<dependency>
 			<groupId>org.junit.platform</groupId>
 			<artifactId>junit-platform-runner</artifactId>
-			<scope>test</scope>
+			<version>1.11.0</version>
 		</dependency>
 	</dependencies>
 
@@ -158,12 +149,12 @@
 			<plugin>
 				<groupId>org.eclipse.tycho</groupId>
 				<artifactId>tycho-compiler-plugin</artifactId>
-				<version>${tycho-version}</version>
+				<version>4.0.12</version>
 				<configuration>
 					<useProjectSettings>false</useProjectSettings>
-					<source>${java.version.min}</source>
-					<target>${java.version.min}</target>
-					<compilerVersion>${java.version.min}</compilerVersion>
+					<source>11</source>
+					<target>11</target>
+					<compilerVersion>11</compilerVersion>
 				</configuration>
 			</plugin>
 			<plugin>
