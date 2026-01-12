@@ -30,6 +30,7 @@ import org.jkiss.code.NotNull;
 
 import com.dbeaver.jdbc.model.AbstractJdbcConnection;
 import com.github.litesql.jdbc.driver.ha.client.HAClient;
+import com.github.litesql.jdbc.driver.ha.client.HAExecutionResult;
 
 public class HAConnection extends AbstractJdbcConnection {
 
@@ -117,6 +118,21 @@ public class HAConnection extends AbstractJdbcConnection {
 			getClient().executeUpdate("BEGIN", null);
 		}
 		this.autoCommit = autoCommit;
+	}
+	
+	@Override
+	public boolean isReadOnly() throws SQLException {
+		HAExecutionResult result = getClient().executeQuery("PRAGMA query_only", null);
+		return result.getRows().get(0)[0].equals(1);
+	}
+
+	@Override
+	public void setReadOnly(boolean readOnly) throws SQLException {
+		if (readOnly) {
+			getClient().executeUpdate("PRAGMA query_only = 1", null);
+		} else {
+			getClient().executeUpdate("PRAGMA query_only = 0", null);
+		}	
 	}
 
 	/**
