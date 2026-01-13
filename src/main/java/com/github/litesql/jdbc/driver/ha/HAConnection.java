@@ -1,19 +1,3 @@
-/*
- * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2024 DBeaver Corp and others
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package com.github.litesql.jdbc.driver.ha;
 
 import java.io.IOException;
@@ -23,8 +7,8 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import org.jkiss.code.NotNull;
 
@@ -34,41 +18,43 @@ import com.github.litesql.jdbc.driver.ha.client.HAExecutionResult;
 
 public class HAConnection extends AbstractJdbcConnection {
 
-    @NotNull
-    private final HADriver driver;
-    @NotNull
-    private final HAClient client;
-    @NotNull
-    private final String url;
-    @NotNull
-    private final Map<String, Object> driverProperties;
-    
-    private boolean autoCommit;
-    
-    private HADatabaseMetaData databaseMetaData;
+	@NotNull
+	private final HADriver driver;
+	@NotNull
+	private final HAClient client;
+	@NotNull
+	private final String url;
+	@NotNull
+	private final Map<String, Object> driverProperties;
 
-    public HAConnection(
-        @NotNull HADriver driver,
-        @NotNull String url,
-        @NotNull Map<String, Object> driverProperties
-    ) throws SQLException {
-        this.driver = driver;
-        this.url = url;
-        this.driverProperties = driverProperties;
-        this.autoCommit = true;
+	private boolean autoCommit;
 
-        try {            
-            this.client = new HAClient(new URL(url));
-        } catch (IOException e) {
-            throw new SQLException(e);
-        }
-    }
+	private HADatabaseMetaData databaseMetaData;
+	
+	private int queryTimeout;
 
-    @Override
-	public void commit() throws SQLException {
-    	getClient().executeUpdate("COMMIT", null);
+	private Logger logger = Logger.getLogger("com.github.litesql.jdbc.driver.ha");
+
+	public HAConnection(@NotNull HADriver driver, @NotNull String url, @NotNull Map<String, Object> driverProperties)
+			throws SQLException {
+		this.driver = driver;
+		this.url = url;
+		this.driverProperties = driverProperties;
+		this.autoCommit = true;
+		this.queryTimeout = 60;
+
+		try {
+			this.client = new HAClient(new URL(url));
+		} catch (IOException e) {
+			throw new SQLException(e);
+		}
 	}
-    
+
+	@Override
+	public void commit() throws SQLException {
+		getClient().executeUpdate("COMMIT", null, this.queryTimeout);
+	}
+
 	@Override
 	public boolean getAutoCommit() throws SQLException {
 		return this.autoCommit;
@@ -76,117 +62,115 @@ public class HAConnection extends AbstractJdbcConnection {
 
 	@Override
 	public boolean isValid(int timeout) throws SQLException {
-		if (timeout == 0) {
-			try {
-				getClient().executeQuery("SELECT 1", null);
-			} catch(Exception e) {
-				return false;
-			}
-			return true;
-		}
-		
-		CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
-			try {
-				getClient().executeQuery("SELECT 1", null);
-			} catch(Exception e) {
-				return false;
-			}
-			return true;
-        }).orTimeout(timeout, TimeUnit.SECONDS);
-		
 		try {
-			return future.get().booleanValue();
-		} catch(Exception e) {
+			getClient().executeQuery("SELECT 1", null, timeout);
+		} catch (Exception e) {
 			return false;
 		}
+		return true;
 	}
 
 	@Override
 	public void rollback() throws SQLException {
-		getClient().executeUpdate("ROLLBACK", null);
+		getClient().executeUpdate("ROLLBACK", null, this.queryTimeout);
 	}
 
 	@Override
 	public void setAutoCommit(boolean autoCommit) throws SQLException {
 		if (autoCommit == this.autoCommit) {
 			return;
-		}		
+		}
 		if (autoCommit) {
 			this.commit();
 		} else {
-			getClient().executeUpdate("BEGIN", null);
+			getClient().executeUpdate("BEGIN", null, this.queryTimeout);
 		}
 		this.autoCommit = autoCommit;
 	}
-	
+
+	@Override
+	public void endRequest() throws SQLException {
+		if (!this.autoCommit) {
+			this.autoCommit = true;
+			getClient().executeUpdate("COMMIT", null, this.queryTimeout);
+		}
+		try {
+			getClient().executeUpdate("PRAGMA query_only = 0", null, this.queryTimeout);
+		} catch (Exception e) {
+			logger.log(Level.SEVERE, "Could not set PRAGMA query_only", e);
+		}
+	}
+
 	@Override
 	public boolean isReadOnly() throws SQLException {
-		HAExecutionResult result = getClient().executeQuery("PRAGMA query_only", null);
+		HAExecutionResult result = getClient().executeQuery("PRAGMA query_only", null, this.queryTimeout);
 		return result.getRows().get(0)[0].equals(1);
 	}
 
 	@Override
 	public void setReadOnly(boolean readOnly) throws SQLException {
 		if (readOnly) {
-			getClient().executeUpdate("PRAGMA query_only = 1", null);
+			getClient().executeUpdate("PRAGMA query_only = 1", null, this.queryTimeout);
 		} else {
-			getClient().executeUpdate("PRAGMA query_only = 0", null);
-		}	
+			getClient().executeUpdate("PRAGMA query_only = 0", null, this.queryTimeout);
+		}
 	}
 
 	/**
-     * Obtain transport client
-     */
-    public HAClient getClient() {
-        return client;
-    }
+	 * Obtain transport client
+	 */
+	public HAClient getClient() {
+		return client;
+	}
 
-    @NotNull
-    public String getUrl() {
-        return url;
-    }
+	@NotNull
+	public String getUrl() {
+		return url;
+	}
 
-    @NotNull
-    public Map<String, Object> getDriverProperties() {
-        return driverProperties;
-    }
+	@NotNull
+	public Map<String, Object> getDriverProperties() {
+		return driverProperties;
+	}
 
-    @NotNull
-    public HADriver getDriver() {
-        return driver;
-    }
+	@NotNull
+	public HADriver getDriver() {
+		return driver;
+	}
 
-    @Override
-    public Statement createStatement(int resultSetType, int resultSetConcurrency, int resultSetHoldability) throws SQLException {
-        return new HAStatement(this);
-    }
+	@Override
+	public Statement createStatement(int resultSetType, int resultSetConcurrency, int resultSetHoldability)
+			throws SQLException {
+		return new HAStatement(this);
+	}
 
-    @Override
-    public PreparedStatement prepareStatement(String sql, int resultSetType, int resultSetConcurrency, int resultSetHoldability) throws SQLException {
-        return prepareStatementImpl(sql);
-    }
+	@Override
+	public PreparedStatement prepareStatement(String sql, int resultSetType, int resultSetConcurrency,
+			int resultSetHoldability) throws SQLException {
+		return prepareStatementImpl(sql);
+	}
 
-    @NotNull
-    private HAPreparedStatement prepareStatementImpl(String sql) throws SQLException {
-        return new HAPreparedStatement(this, sql);
-    }
+	@NotNull
+	private HAPreparedStatement prepareStatementImpl(String sql) throws SQLException {
+		return new HAPreparedStatement(this, sql);
+	}
 
-    @Override
-    public void close() throws SQLException {
-        client.close();
-    }
+	@Override
+	public void close() throws SQLException {
+		client.close();
+	}
 
-    @Override
-    public boolean isClosed() {
-        return false;
-    }
+	@Override
+	public boolean isClosed() {
+		return false;
+	}
 
-    @Override
-    public DatabaseMetaData getMetaData() throws SQLException {
-        if (databaseMetaData == null) {
-            databaseMetaData = new HADatabaseMetaData(this);
-        }
-        return databaseMetaData;
-    }
+	@Override
+	public DatabaseMetaData getMetaData() throws SQLException {
+		if (databaseMetaData == null) {
+			databaseMetaData = new HADatabaseMetaData(this);
+		}
+		return databaseMetaData;
+	}
 
 }

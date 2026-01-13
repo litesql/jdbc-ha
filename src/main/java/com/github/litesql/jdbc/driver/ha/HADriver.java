@@ -1,7 +1,11 @@
 package com.github.litesql.jdbc.driver.ha;
 
 
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.Driver;
+import java.sql.DriverManager;
+import java.sql.DriverPropertyInfo;
+import java.sql.SQLException;
 import java.util.Enumeration;
 import java.util.LinkedHashMap;
 import java.util.Map;

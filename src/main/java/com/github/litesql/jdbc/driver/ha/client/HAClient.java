@@ -74,8 +74,8 @@ public class HAClient {
      *
      * @return The result set.
      */
-    public HAExecutionResult executeQuery(String stmt, Map<Object, Object> parameters) throws SQLException {
-    	QueryResponse response = send(stmt, parameters, QueryType.QUERY_TYPE_EXEC_QUERY);
+    public HAExecutionResult executeQuery(String stmt, Map<Object, Object> parameters, int timeout) throws SQLException {
+    	QueryResponse response = send(stmt, parameters, QueryType.QUERY_TYPE_EXEC_QUERY, timeout);
     	
     	List<String> columns = new ArrayList<String>(response.getResultSet().getColumnsList());
     	List<Object[]> rows = new ArrayList<Object[]>();
@@ -93,13 +93,13 @@ public class HAClient {
         return new HAExecutionResult(columns, rows);
     }
     
-    public int executeUpdate(String stmt, Map<Object, Object> parameters) throws SQLException {
-    	QueryResponse response = send(stmt, parameters, QueryType.QUERY_TYPE_EXEC_UPDATE);
+    public int executeUpdate(String stmt, Map<Object, Object> parameters, int timeout) throws SQLException {
+    	QueryResponse response = send(stmt, parameters, QueryType.QUERY_TYPE_EXEC_UPDATE, timeout);
         return (int) response.getRowsAffected();
     }
     
-    public HAExecutionResult execute(String stmt, Map<Object, Object> parameters) throws SQLException {
-    	QueryResponse response = send(stmt, parameters, QueryType.QUERY_TYPE_UNSPECIFIED);
+    public HAExecutionResult execute(String stmt, Map<Object, Object> parameters, int timeout) throws SQLException {
+    	QueryResponse response = send(stmt, parameters, QueryType.QUERY_TYPE_UNSPECIFIED, timeout);
     	
     	if (response.getResultSet() == null || response.getResultSet().getColumnsCount() == 0) {
     		return new HAExecutionResult(response.getRowsAffected());
@@ -120,7 +120,7 @@ public class HAClient {
         return new HAExecutionResult(columns, rows);
     }
     
-    private synchronized QueryResponse send(String sql, Map<Object, Object> parameters, QueryType type) throws SQLException {
+    private synchronized QueryResponse send(String sql, Map<Object, Object> parameters, QueryType type, int timeout) throws SQLException {
     	this.latch = new CountDownLatch(1);
     	QueryRequest.Builder builder = QueryRequest.newBuilder().setReplicationId(this.replicationID).setSql(sql).setType(type);
     	
@@ -144,7 +144,7 @@ public class HAClient {
     	
     	this.requestObserver.onNext(builder.build());
     	try {
-    	    this.latch.await(1, TimeUnit.MINUTES); // Wait for onNext
+    	    this.latch.await(timeout, TimeUnit.SECONDS); // Wait for onNext
     	} catch (InterruptedException e) {
     	    Thread.currentThread().interrupt();
     	}    	
@@ -165,6 +165,5 @@ public class HAClient {
     public void close() {
     	this.requestObserver.onCompleted();
     }
-
 
 }

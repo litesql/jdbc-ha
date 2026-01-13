@@ -16,14 +16,15 @@
  */
 package com.github.litesql.jdbc.driver.ha;
 
-import com.github.litesql.jdbc.driver.ha.client.HAExecutionResult;
-import com.dbeaver.jdbc.model.AbstractJdbcResultSetMetaData;
-import org.jkiss.code.NotNull;
-import org.jkiss.utils.CommonUtils;
-
 import java.sql.SQLException;
 import java.sql.Types;
 import java.util.List;
+
+import org.jkiss.code.NotNull;
+import org.jkiss.utils.CommonUtils;
+
+import com.dbeaver.jdbc.model.AbstractJdbcResultSetMetaData;
+import com.github.litesql.jdbc.driver.ha.client.HAExecutionResult;
 
 public class HAResultSetMetaData extends AbstractJdbcResultSetMetaData<HAStatement> {
 

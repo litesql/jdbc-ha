@@ -16,13 +16,13 @@
  */
 package com.github.litesql.jdbc.driver.ha;
 
-import org.jkiss.code.NotNull;
-
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.regex.Matcher;
+
+import org.jkiss.code.NotNull;
 
 public class HAUtils {
 
