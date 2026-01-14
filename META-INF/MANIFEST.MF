@@ -1,8 +1,9 @@
 Manifest-Version: 1.0
-Bundle-ManifestVersion: 5
+Bundle-ManifestVersion: 2
+Automatic-Module-Name: jdbc.ha
 Bundle-Name: DBeaver HA JDBC Driver
 Bundle-SymbolicName: jdbc-ha
-Bundle-Version: 1.0.5
+Bundle-Version: 1.0.6
 Bundle-Release-Date: 20260114
 Bundle-RequiredExecutionEnvironment: JavaSE-11
 Bundle-ActivationPolicy: lazy

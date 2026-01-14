@@ -25,7 +25,7 @@ public class HAConstants {
 
     public static final int DRIVER_VERSION_MAJOR = 1;
     public static final int DRIVER_VERSION_MINOR = 0;
-    public static final int DRIVER_VERSION_MICRO = 5;
+    public static final int DRIVER_VERSION_MICRO = 6;
 
     public static final String DRIVER_NAME = "LiteSQL HA";
     public static final String DRIVER_INFO = "LiteSQL HA JDBC driver";

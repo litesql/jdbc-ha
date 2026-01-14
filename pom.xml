@@ -5,7 +5,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>io.github.litesql</groupId>
 	<artifactId>jdbc-ha</artifactId>
-	<version>1.0.5</version>
+	<version>1.0.6</version>
 
 	<name>HA JDBC Driver</name>
 	<description>HA JDBC driver dbeaver compatible</description>
@@ -73,6 +73,36 @@
 				</plugins>
 			</build>
 		</profile>
+		<profile>
+			<id>shade</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-shade-plugin</artifactId>
+						<version>3.6.1</version>
+						<executions>
+							<execution>
+								<id>build-main-jar</id>
+								<configuration>
+									<artifactSet>
+										<excludes>
+											<exclude>junit:junit</exclude>
+											<exclude>jmock:jmock</exclude>
+										</excludes>
+									</artifactSet>
+									<finalName>jdbc-ha-full-${project.version}</finalName>
+								</configuration>
+								<phase>package</phase>
+								<goals>
+									<goal>shade</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
 	</profiles>
 
 	<licenses>
@@ -134,11 +164,13 @@
 			<groupId>org.junit.jupiter</groupId>
 			<artifactId>junit-jupiter-engine</artifactId>
 			<version>5.11.0</version>
+			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.junit.platform</groupId>
 			<artifactId>junit-platform-runner</artifactId>
 			<version>1.11.0</version>
+			<scope>test</scope>
 		</dependency>
 	</dependencies>
 
@@ -160,6 +192,7 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-surefire-plugin</artifactId>
+				<version>3.5.4</version>
 				<executions>
 					<execution>
 						<id>test</id>
@@ -209,29 +242,6 @@
 						</configuration>
 						<goals>
 							<goal>copy-resources</goal>
-						</goals>
-					</execution>
-				</executions>
-			</plugin>
-
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-shade-plugin</artifactId>
-				<executions>
-					<execution>
-						<id>build-main-jar</id>
-						<configuration>
-							<artifactSet>
-								<excludes>
-									<exclude>junit:junit</exclude>
-									<exclude>jmock:jmock</exclude>
-								</excludes>
-							</artifactSet>
-							<finalName>jdbc-ha-full-${project.version}</finalName>
-						</configuration>
-						<phase>package</phase>
-						<goals>
-							<goal>shade</goal>
 						</goals>
 					</execution>
 				</executions>
