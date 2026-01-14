@@ -5,7 +5,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>io.github.litesql</groupId>
 	<artifactId>jdbc-ha</artifactId>
-	<version>1.0.4</version>
+	<version>1.0.5</version>
 
 	<name>HA JDBC Driver</name>
 	<description>HA JDBC driver dbeaver compatible</description>
@@ -252,13 +252,5 @@
 			</snapshots>
 		</repository>
 	</repositories>
-
-	<distributionManagement>
-		<repository>
-			<id>ossrh</id>
-			<name>Central Repository OSSRH</name>
-			<url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
-		</repository>		
-	</distributionManagement>
 
 </project>

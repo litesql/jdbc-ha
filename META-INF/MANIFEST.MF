@@ -1,9 +1,9 @@
 Manifest-Version: 1.0
-Bundle-ManifestVersion: 3
+Bundle-ManifestVersion: 5
 Bundle-Name: DBeaver HA JDBC Driver
 Bundle-SymbolicName: jdbc-ha
-Bundle-Version: 1.0.4
-Bundle-Release-Date: 20260113
+Bundle-Version: 1.0.5
+Bundle-Release-Date: 20260114
 Bundle-RequiredExecutionEnvironment: JavaSE-11
 Bundle-ActivationPolicy: lazy
 Export-Package: com.github.litesql.jdbc.driver.ha,
