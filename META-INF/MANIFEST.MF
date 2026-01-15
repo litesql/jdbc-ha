@@ -1,12 +1,13 @@
 Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
 Automatic-Module-Name: jdbc.ha
-Bundle-Name: DBeaver HA JDBC Driver
+Bundle-Name: LiteSQL HA JDBC Driver
 Bundle-SymbolicName: jdbc-ha
-Bundle-Version: 1.0.6
-Bundle-Release-Date: 20260114
+Bundle-Version: 1.0.7
+Bundle-Release-Date: 20260115
 Bundle-RequiredExecutionEnvironment: JavaSE-11
 Bundle-ActivationPolicy: lazy
-Export-Package: com.github.litesql.jdbc.driver.ha,
- com.github.litesql.jdbc.driver.ha.client
+Export-Package: com.github.litesql.jdbc.ha,
+ com.github.litesql.jdbc.ha.client
+Import-Package: java.sql, javax.sql
 Bundle-Vendor: LiteSQL

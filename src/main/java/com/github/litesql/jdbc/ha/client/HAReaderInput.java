@@ -14,18 +14,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.github.litesql.jdbc.driver.ha.client;
+package com.github.litesql.jdbc.ha.client;
 
-import java.io.ByteArrayOutputStream;
+import org.jkiss.utils.IOUtils;
+
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
+import java.io.Reader;
 
-public class HAStreamInput {
-    private InputStream stream;
+public class HAReaderInput {
+    private Reader stream;
     private long length;
 
-    public HAStreamInput(InputStream stream, long length) {
+    public HAReaderInput(Reader stream, long length) {
         this.stream = stream;
         this.length = length;
     }
@@ -33,15 +33,13 @@ public class HAStreamInput {
     @Override
     public String toString() {
         try {
-            ByteArrayOutputStream result = new ByteArrayOutputStream();
-            byte[] buffer = new byte[1024];
-            for (int length; (length = stream.read(buffer)) != -1; ) {
-                result.write(buffer, 0, length);
+            String str = IOUtils.readToString(stream);
+            if (length <= 0) {
+                return str;
             }
-            return result.toString(StandardCharsets.UTF_8);
+            return str.substring(0, (int) length);
         } catch (IOException e) {
             return e.getMessage();
         }
     }
-
 }

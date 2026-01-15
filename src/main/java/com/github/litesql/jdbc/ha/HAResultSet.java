@@ -1,4 +1,4 @@
-package com.github.litesql.jdbc.driver.ha;
+package com.github.litesql.jdbc.ha;
 
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -18,7 +18,7 @@ import org.jkiss.code.Nullable;
 import org.jkiss.utils.CommonUtils;
 
 import com.dbeaver.jdbc.model.AbstractJdbcResultSet;
-import com.github.litesql.jdbc.driver.ha.client.HAExecutionResult;
+import com.github.litesql.jdbc.ha.client.HAExecutionResult;
 
 public class HAResultSet extends AbstractJdbcResultSet<HAStatement, HAResultSetMetaData> {
 

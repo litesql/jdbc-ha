@@ -1,4 +1,4 @@
-package com.github.litesql.jdbc.driver.ha;
+package com.github.litesql.jdbc.ha;
 
 import java.io.IOException;
 import java.net.URL;
@@ -13,8 +13,8 @@ import java.util.logging.Logger;
 import org.jkiss.code.NotNull;
 
 import com.dbeaver.jdbc.model.AbstractJdbcConnection;
-import com.github.litesql.jdbc.driver.ha.client.HAClient;
-import com.github.litesql.jdbc.driver.ha.client.HAExecutionResult;
+import com.github.litesql.jdbc.ha.client.HAClient;
+import com.github.litesql.jdbc.ha.client.HAExecutionResult;
 
 public class HAConnection extends AbstractJdbcConnection {
 

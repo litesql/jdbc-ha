@@ -1,4 +1,4 @@
-package com.github.litesql.jdbc.driver.ha;
+package com.github.litesql.jdbc.ha;
 
 
 import java.sql.Connection;
@@ -14,18 +14,27 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class HADriver implements Driver {
+	
+	private static HADriver instance; 
 
     static {
         Logger logger = Logger.getLogger("com.github.litesql.jdbc.driver.ha");
         parentLogger = logger;
         try {
-            DriverManager.registerDriver(new HADriver());
+            DriverManager.registerDriver(getInstance());
         } catch (Exception e) {
             logger.log(Level.SEVERE, "Could not register driver", e);
         }
     }
 
     private static final java.util.logging.Logger parentLogger;
+    
+    static synchronized HADriver getInstance() {
+    	if (instance == null) {
+    		instance = new HADriver();
+    	}
+    	return instance;
+    }
 
     @Override
     public Connection connect(String url, Properties info) throws SQLException {

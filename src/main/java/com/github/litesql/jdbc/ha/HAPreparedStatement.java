@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.github.litesql.jdbc.driver.ha;
+package com.github.litesql.jdbc.ha;
 
 import java.io.InputStream;
 import java.io.Reader;
@@ -39,8 +39,8 @@ import java.util.Calendar;
 
 import org.jkiss.code.NotNull;
 
-import com.github.litesql.jdbc.driver.ha.client.HAReaderInput;
-import com.github.litesql.jdbc.driver.ha.client.HAStreamInput;
+import com.github.litesql.jdbc.ha.client.HAReaderInput;
+import com.github.litesql.jdbc.ha.client.HAStreamInput;
 
 public class HAPreparedStatement extends HAStatement implements PreparedStatement {
 

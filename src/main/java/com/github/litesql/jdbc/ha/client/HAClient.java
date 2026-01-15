@@ -1,4 +1,4 @@
-package com.github.litesql.jdbc.driver.ha.client;
+package com.github.litesql.jdbc.ha.client;
 
 import java.net.URL;
 import java.sql.SQLException;

@@ -1,4 +1,4 @@
-package com.github.litesql.jdbc.driver.ha;
+package com.github.litesql.jdbc.ha;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;

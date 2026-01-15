@@ -1,4 +1,4 @@
-package com.github.litesql.jdbc.driver.ha;
+package com.github.litesql.jdbc.ha;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -10,7 +10,7 @@ import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 
 import com.dbeaver.jdbc.model.AbstractJdbcStatement;
-import com.github.litesql.jdbc.driver.ha.client.HAExecutionResult;
+import com.github.litesql.jdbc.ha.client.HAExecutionResult;
 
 public class HAStatement extends AbstractJdbcStatement<HAConnection> {
 
