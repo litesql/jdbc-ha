@@ -35,6 +35,10 @@ public class HADriver implements Driver {
     	}
     	return instance;
     }
+    
+    private HADriver() {
+    	
+    }
 
     @Override
     public Connection connect(String url, Properties info) throws SQLException {
