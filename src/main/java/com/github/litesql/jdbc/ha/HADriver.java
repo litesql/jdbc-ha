@@ -1,6 +1,5 @@
 package com.github.litesql.jdbc.ha;
 
-
 import java.sql.Connection;
 import java.sql.Driver;
 import java.sql.DriverManager;
@@ -14,86 +13,88 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class HADriver implements Driver {
-	
-	private static HADriver instance; 
 
-    static {
-        Logger logger = Logger.getLogger("com.github.litesql.jdbc.driver.ha");
-        parentLogger = logger;
-        try {
-            DriverManager.registerDriver(getInstance());
-        } catch (Exception e) {
-            logger.log(Level.SEVERE, "Could not register driver", e);
-        }
-    }
+	private static HADriver instance;
 
-    private static final java.util.logging.Logger parentLogger;
-    
-    static synchronized HADriver getInstance() {
-    	if (instance == null) {
-    		instance = new HADriver();
-    	}
-    	return instance;
-    }
-    
-    private HADriver() {
-    	
-    }
+	static {
+		Logger logger = Logger.getLogger("com.github.litesql.jdbc.driver.ha");
+		parentLogger = logger;
+		try {
+			DriverManager.registerDriver(getInstance());
+		} catch (Exception e) {
+			logger.log(Level.SEVERE, "Could not register driver", e);
+		}
+	}
 
-    @Override
-    public Connection connect(String url, Properties info) throws SQLException {
-        String targetUrl = HAUtils.validateAndFormatUrl(url);
+	private static final java.util.logging.Logger parentLogger;
 
-        Map<String, Object> props = new LinkedHashMap<>();
-        for (Enumeration<?> pne = info.propertyNames(); pne.hasMoreElements(); ) {
-            String propName = (String) pne.nextElement();
-            props.put(propName, info.get(propName));
-        }
-        return new HAConnection(this, targetUrl, props);
-    }
+	static synchronized HADriver getInstance() {
+		if (instance == null) {
+			instance = new HADriver();
+		}
+		return instance;
+	}
 
-    @Override
-    public boolean acceptsURL(String url) {
-        return HAConstants.CONNECTION_URL_PATTERN.matcher(url).matches();
-    }
+	private HADriver() {
 
-    @Override
-    public DriverPropertyInfo[] getPropertyInfo(String url, Properties info) {
-        return new DriverPropertyInfo[] {
+	}
 
-        };
-    }
+	@Override
+	public Connection connect(String url, Properties info) throws SQLException {
+		String targetUrl = HAUtils.validateAndFormatUrl(url);
 
-    @Override
-    public int getMajorVersion() {
-        return HAConstants.DRIVER_VERSION_MAJOR;
-    }
+		Map<String, Object> props = new LinkedHashMap<>();
+		if (info != null) {
+			for (Enumeration<?> pne = info.propertyNames(); pne.hasMoreElements();) {
+				String propName = (String) pne.nextElement();
+				props.put(propName, info.get(propName));
+			}
+		}
+		return new HAConnection(this, targetUrl, props);
+	}
 
-    @Override
-    public int getMinorVersion() {
-        return HAConstants.DRIVER_VERSION_MINOR;
-    }
+	@Override
+	public boolean acceptsURL(String url) {
+		return HAConstants.CONNECTION_URL_PATTERN.matcher(url).matches();
+	}
 
-    public int getMicroVersion() {
-        return HAConstants.DRIVER_VERSION_MICRO;
-    }
+	@Override
+	public DriverPropertyInfo[] getPropertyInfo(String url, Properties info) {
+		return new DriverPropertyInfo[] {
 
-    @Override
-    public boolean jdbcCompliant() {
-        return true;
-    }
+		};
+	}
 
-    @Override
-    public Logger getParentLogger() {
-        return parentLogger;
-    }
+	@Override
+	public int getMajorVersion() {
+		return HAConstants.DRIVER_VERSION_MAJOR;
+	}
 
-    public String getDriverName() {
-        return HAConstants.DRIVER_NAME;
-    }
+	@Override
+	public int getMinorVersion() {
+		return HAConstants.DRIVER_VERSION_MINOR;
+	}
 
-    public String getFullVersion() {
-        return getMajorVersion() + "." + getMinorVersion() + "." + getMicroVersion() +
-               " (" + HAConstants.DRIVER_INFO + ")";
-    }
+	public int getMicroVersion() {
+		return HAConstants.DRIVER_VERSION_MICRO;
+	}
+
+	@Override
+	public boolean jdbcCompliant() {
+		return true;
+	}
+
+	@Override
+	public Logger getParentLogger() {
+		return parentLogger;
+	}
+
+	public String getDriverName() {
+		return HAConstants.DRIVER_NAME;
+	}
+
+	public String getFullVersion() {
+		return getMajorVersion() + "." + getMinorVersion() + "." + getMicroVersion() + " (" + HAConstants.DRIVER_INFO
+				+ ")";
+	}
 }
