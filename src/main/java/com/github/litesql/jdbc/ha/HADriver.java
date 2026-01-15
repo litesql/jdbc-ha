@@ -35,7 +35,7 @@ public class HADriver implements Driver {
 		return instance;
 	}
 
-	private HADriver() {
+	public HADriver() {
 
 	}
 

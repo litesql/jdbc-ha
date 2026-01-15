@@ -20,7 +20,7 @@ JDBC Driver for [SQLite HA](https://github.com/litesql/ha)
     <dependency>
         <groupId>io.github.litesql</groupId>
         <artifactId>jdbc-ha</artifactId>
-        <version>1.0.9</version>
+        <version>1.0.10</version>
     </dependency>
 </dependencies>
 
@@ -55,6 +55,8 @@ Connection connection = dataSource.getConnection();
 ## Load driver into DBeaver
 
 [Download](https://github.com/litesql/jdbc-ha/releases) the full version jar and register as a custom driver to manage the database using [DBeaver](https://dbeaver.com/docs/dbeaver/Driver-Manager/#add-a-new-driver).
+
+![](./dbeaver-config.png)
 
 ## Documentation
 
