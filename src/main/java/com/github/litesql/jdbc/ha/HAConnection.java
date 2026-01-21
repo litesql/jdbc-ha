@@ -173,4 +173,22 @@ public class HAConnection extends AbstractJdbcConnection {
 		return databaseMetaData;
 	}
 
+	@Override
+	public void setCatalog(String catalog) throws SQLException {
+		if (catalog.isEmpty()) {
+			throw new SQLException("catalog is empty");
+		}
+		getClient().setReplicationID(catalog);
+	}
+
+	@Override
+	public String getCatalog() throws SQLException {
+		return getClient().getReplicationID();
+	}
+
+	@Override
+	public void beginRequest() throws SQLException {
+		getClient().executeUpdate("BEGIN", null, this.queryTimeout);
+	}
+
 }

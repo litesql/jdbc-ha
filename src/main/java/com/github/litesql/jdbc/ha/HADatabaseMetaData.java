@@ -26,10 +26,13 @@ public class HADatabaseMetaData extends AbstractJdbcDatabaseMetaData<HAConnectio
 
     private static final Pattern VERSION_PATTERN = Pattern.compile("(\\w+)\\s+([0-9.]+)\\s+(.+)");
 
+    private HAConnection connection;
+    
     private String serverVersion = "1.0.0";
 
     public HADatabaseMetaData(@NotNull HAConnection connection) {
         super(connection, connection.getUrl());
+        this.connection = connection;
     }
 
     private void readServerVersion() throws SQLException {
@@ -77,8 +80,11 @@ public class HADatabaseMetaData extends AbstractJdbcDatabaseMetaData<HAConnectio
     @Override
     public ResultSet getTables(String catalog, String schemaPattern, String tableNamePattern, String[] types) throws SQLException {
         verifySchemaParameters(catalog, schemaPattern);
+        if (!catalog.isEmpty()) {
+        	connection.setCatalog(catalog);
+        }
         try (PreparedStatement dbStat = connection.prepareStatement(
-            "SELECT NULL as TABLE_CAT, NULL AS TABLE_SCHEM," +
+            "SELECT " + HAUtils.quote(catalog) + " as TABLE_CAT, NULL AS TABLE_SCHEM," +
                 "name AS TABLE_NAME,type as TABLE_TYPE, " +
                 "NULL AS REMARKS, NULL AS TYPE_CAT, NULL AS TYPE_SCHEM, NULL AS TYPE_NAME " +
                 "FROM sqlite_master WHERE type='table'")
@@ -93,11 +99,14 @@ public class HADatabaseMetaData extends AbstractJdbcDatabaseMetaData<HAConnectio
         if (CommonUtils.isEmpty(tableName) || "%".equals(tableName)) {
             tableName = null;
         }
+        if (!catalog.isEmpty()) {
+        	connection.setCatalog(catalog);
+        }
         return executeQuery(
             "WITH all_tables AS (SELECT name AS tn FROM sqlite_master WHERE type = 'table'" +
                 (tableName == null ? "" : " and name=" + HAUtils.quote(tableName)) + ") \n" +
-                "SELECT " +
-                    "NULL as TABLE_CAT, " +
+                "SELECT " +  HAUtils.quote(catalog) + 
+                    " as TABLE_CAT, " +
                     "NULL AS TABLE_SCHEM, " +
                     "at.tn as TABLE_NAME,\n" +
                     "pti.name as COLUMN_NAME," +
@@ -127,12 +136,15 @@ public class HADatabaseMetaData extends AbstractJdbcDatabaseMetaData<HAConnectio
 
     @Override
     public ResultSet getPrimaryKeys(String catalog, String schema, String tableName) throws SQLException {
+    	if (!catalog.isEmpty()) {
+        	connection.setCatalog(catalog);
+        }
         String table = tableName;
         PrimaryKeyFinder pkFinder = new PrimaryKeyFinder(connection, table);
         String[] columns = pkFinder.getColumns();
 
         StringBuilder sql = new StringBuilder();
-        sql.append("select null as TABLE_CAT, null as TABLE_SCHEM, '")
+        sql.append("select ").append(HAUtils.quote(catalog)).append(" as TABLE_CAT, null as TABLE_SCHEM, '")
             .append(HAUtils.escape(table))
             .append("' as TABLE_NAME, cn as COLUMN_NAME, ks as KEY_SEQ, pk as PK_NAME from (");
 
@@ -170,11 +182,14 @@ public class HADatabaseMetaData extends AbstractJdbcDatabaseMetaData<HAConnectio
     @Override
     public ResultSet getIndexInfo(String catalog, String schema, String table, boolean unique, boolean approximate) throws SQLException {
         {
+        	if (!catalog.isEmpty()) {
+            	connection.setCatalog(catalog);
+            }
             StringBuilder sql = new StringBuilder();
 
             // define the column header
             // this is from the JDBC spec, it is part of the driver protocol
-            sql.append("select null as TABLE_CAT, null as TABLE_SCHEM, '")
+            sql.append("select ").append(HAUtils.quote(catalog)).append(" as TABLE_CAT, null as TABLE_SCHEM, '")
                 .append(HAUtils.escape(table))
                 .append("' as TABLE_NAME, un as NON_UNIQUE, null as INDEX_QUALIFIER, n as INDEX_NAME, ")
                 .append(Integer.toString(DatabaseMetaData.tableIndexOther)).append(" as TYPE, op as ORDINAL_POSITION, ")
@@ -231,11 +246,14 @@ public class HADatabaseMetaData extends AbstractJdbcDatabaseMetaData<HAConnectio
     @Override
     public ResultSet getImportedKeys(String catalog, String schema, String table) throws SQLException {
         {
+        	if (!catalog.isEmpty()) {
+            	connection.setCatalog(catalog);
+            }
             StringBuilder sql = new StringBuilder();
 
             sql.append("select ")
                 .append(HAUtils.quote(catalog)).append(" as PKTABLE_CAT, ")
-                .append(HAUtils.quote(schema)).append(" as PKTABLE_SCHEM, ")
+                .append("NULL as PKTABLE_SCHEM, ")
                 .append("ptn as PKTABLE_NAME, pcn as PKCOLUMN_NAME, ")
                 .append(HAUtils.quote(catalog)).append(" as FKTABLE_CAT, ")
                 .append(HAUtils.quote(schema)).append(" as FKTABLE_SCHEM, ")
@@ -332,6 +350,9 @@ public class HADatabaseMetaData extends AbstractJdbcDatabaseMetaData<HAConnectio
 
     @Override
     public ResultSet getExportedKeys(String catalog, String schema, String table) throws SQLException {
+    	if (!catalog.isEmpty()) {
+        	connection.setCatalog(catalog);
+        }
         PrimaryKeyFinder pkFinder = new PrimaryKeyFinder(connection, table);
         String[] pkColumns = pkFinder.getColumns();
 
@@ -437,7 +458,6 @@ public class HADatabaseMetaData extends AbstractJdbcDatabaseMetaData<HAConnectio
         } else {
             sql.append("limit 0");
         }
-
         return executeQuery(sql.toString());
     }
 
@@ -448,6 +468,9 @@ public class HADatabaseMetaData extends AbstractJdbcDatabaseMetaData<HAConnectio
         }
         if (foreignTable == null) {
             return getImportedKeys(parentCatalog, parentSchema, parentTable);
+        }
+        if (!parentCatalog.isEmpty()) {
+        	connection.setCatalog(parentCatalog);
         }
 
         String query =
@@ -465,9 +488,6 @@ public class HADatabaseMetaData extends AbstractJdbcDatabaseMetaData<HAConnectio
     }
 
     private static void verifySchemaParameters(String catalog, String schemaPattern) throws SQLException {
-        if (!CommonUtils.isEmpty(catalog)) {
-            throw new SQLException("Catalogs are not supported");
-        }
         if (!CommonUtils.isEmpty(schemaPattern)) {
             throw new SQLException("Schemas are not supported");
         }
@@ -688,5 +708,48 @@ public class HADatabaseMetaData extends AbstractJdbcDatabaseMetaData<HAConnectio
             }
         }
     }
+	@Override
+	public boolean supportsTransactions() throws SQLException {
+		return true;
+	}
+
+	@Override
+	public ResultSet getCatalogs() throws SQLException {		
+		try(HAStatement stmt = new HAStatement(connection)) {
+			return new HAResultSet(stmt, connection.getClient().getReplicationIDs());
+		} catch(Exception e) {
+			throw new SQLException(e);
+		}		 
+	}
+
+	@Override
+	public boolean supportsCatalogsInDataManipulation() throws SQLException {
+		return false;
+	}
+
+	@Override
+	public boolean supportsCatalogsInProcedureCalls() throws SQLException {
+		return false;
+	}
+
+	@Override
+	public boolean supportsCatalogsInTableDefinitions() throws SQLException {
+		return false;
+	}
+
+	@Override
+	public boolean supportsCatalogsInIndexDefinitions() throws SQLException {
+		return false;
+	}
+
+	@Override
+	public boolean supportsCatalogsInPrivilegeDefinitions() throws SQLException {
+		return false;
+	}
+
+	@Override
+	public boolean isCatalogAtStart() throws SQLException { 
+		return false;
+	}
 
 }

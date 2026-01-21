@@ -13,10 +13,12 @@ import com.google.protobuf.Any;
 import com.google.protobuf.InvalidProtocolBufferException;
 
 import build.buf.gen.sql.v1.DatabaseServiceGrpc;
+import build.buf.gen.sql.v1.DatabaseServiceGrpc.DatabaseServiceBlockingV2Stub;
 import build.buf.gen.sql.v1.NamedValue;
 import build.buf.gen.sql.v1.QueryRequest;
 import build.buf.gen.sql.v1.QueryResponse;
 import build.buf.gen.sql.v1.QueryType;
+import build.buf.gen.sql.v1.ReplicationIDsResponse;
 import build.buf.gen.sql.v1.Row;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
@@ -30,7 +32,8 @@ public class HAClient {
     private String replicationID;
 
     private final StreamObserver<QueryRequest> requestObserver;
-    
+        
+    private DatabaseServiceBlockingV2Stub stub;
     private CountDownLatch latch;
     private QueryResponse responseRef;
 
@@ -44,6 +47,8 @@ public class HAClient {
                 .usePlaintext()
                 .build();
 
+        this.stub = DatabaseServiceGrpc.newBlockingV2Stub(channel);
+        
         DatabaseServiceGrpc.DatabaseServiceStub asyncStub = DatabaseServiceGrpc.newStub(channel);
         
         StreamObserver<QueryResponse> responseObserver = new StreamObserver<QueryResponse>() {
@@ -68,6 +73,21 @@ public class HAClient {
         
         this.requestObserver  = asyncStub.query(responseObserver);        
     }
+    
+    public HAExecutionResult getReplicationIDs() throws Exception {
+    	ReplicationIDsResponse response = this.stub.replicationIDs(null);
+    	List<Object[]> rows = new ArrayList<>();
+    	for (int i = 0; i < response.getReplicationIdCount(); i++){
+    		Object[] row = new Object[1];
+    		row[0] = response.getReplicationId(i);
+    		rows.add(row);
+    	}
+    	
+    	List<String> columns = new ArrayList<>();
+    	columns.add("TABLE_CAT");
+    	
+    	return new HAExecutionResult(columns, rows);    	
+    }      
 
     /**
      * Execute a single SQL statement.
@@ -154,8 +174,16 @@ public class HAClient {
     	
     	return responseRef;    	
     }
+    
+    public String getReplicationID() {
+		return replicationID;
+	}
 
-    private boolean isIndexedParams(Map<Object, Object> parameter) {
+	public void setReplicationID(String replicationID) {
+		this.replicationID = replicationID;
+	}
+
+	private boolean isIndexedParams(Map<Object, Object> parameter) {
         if (!parameter.isEmpty()) {
             return parameter.keySet().iterator().next() instanceof Integer;
         }
