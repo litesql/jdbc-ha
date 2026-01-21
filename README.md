@@ -20,7 +20,7 @@ JDBC Driver for [SQLite HA](https://github.com/litesql/ha)
     <dependency>
         <groupId>io.github.litesql</groupId>
         <artifactId>jdbc-ha</artifactId>
-        <version>1.0.10</version>
+        <version>1.0.11</version>
     </dependency>
 </dependencies>
 
