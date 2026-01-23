@@ -4,7 +4,7 @@
   <groupId>io.github.litesql</groupId>
   <artifactId>jdbc-ha</artifactId>
   <name>HA JDBC Driver</name>
-  <version>1.0.11</version>
+  <version>1.0.12</version>
   <description>HA JDBC driver dbeaver compatible</description>
   <url>https://github.com/litesql/jdbc-ha</url>
   <developers>

@@ -14,6 +14,9 @@ public class Credentials extends CallCredentials {
 		    Metadata.Key.of("Authorization", Metadata.ASCII_STRING_MARSHALLER);
 	
 	public Credentials(String token) {
+		if(token == null) {
+			token = "";
+		}
 		this.token = token;
 	}
 	@Override
