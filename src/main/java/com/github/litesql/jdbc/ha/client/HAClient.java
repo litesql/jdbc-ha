@@ -20,6 +20,7 @@ import build.buf.gen.sql.v1.QueryResponse;
 import build.buf.gen.sql.v1.QueryType;
 import build.buf.gen.sql.v1.ReplicationIDsResponse;
 import build.buf.gen.sql.v1.Row;
+import io.grpc.CallCredentials;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.stub.StreamObserver;
@@ -37,7 +38,7 @@ public class HAClient {
     private CountDownLatch latch;
     private QueryResponse responseRef;
 
-    public HAClient(URL url) {
+    public HAClient(URL url, String token) {    	
         this.replicationID = url.getPath();
         if (this.replicationID.startsWith("/")) {
         	this.replicationID = this.replicationID.substring(1);
@@ -46,10 +47,12 @@ public class HAClient {
         ManagedChannel channel = ManagedChannelBuilder.forAddress(url.getHost(), url.getPort())
                 .usePlaintext()
                 .build();
-
-        this.stub = DatabaseServiceGrpc.newBlockingV2Stub(channel);
         
-        DatabaseServiceGrpc.DatabaseServiceStub asyncStub = DatabaseServiceGrpc.newStub(channel);
+        CallCredentials credentials = new Credentials(token);
+
+        this.stub = DatabaseServiceGrpc.newBlockingV2Stub(channel).withCallCredentials(credentials);
+        
+        DatabaseServiceGrpc.DatabaseServiceStub asyncStub = DatabaseServiceGrpc.newStub(channel).withCallCredentials(credentials);
         
         StreamObserver<QueryResponse> responseObserver = new StreamObserver<QueryResponse>() {
             @Override
@@ -59,9 +62,8 @@ public class HAClient {
             }
 
             @Override
-            public void onError(Throwable t) {
-                t.printStackTrace();
-                responseRef = null;
+            public void onError(Throwable t) {                
+                responseRef = QueryResponse.newBuilder().setError(t.getMessage()).build();
                 latch.countDown();
             }
 

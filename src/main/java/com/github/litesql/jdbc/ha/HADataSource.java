@@ -28,6 +28,9 @@ public class HADataSource implements DataSource {
 	}
 
 	public Properties getProperties() {
+		if(properties == null) {
+			properties = new Properties();
+		}
 		return properties;
 	}
 
@@ -58,6 +61,8 @@ public class HADataSource implements DataSource {
 
 	@Override
 	public Connection getConnection(String user, String pass) throws SQLException {
+		Properties props = (Properties) this.getProperties().clone();
+		props.put("password", pass);
 		return getConnection();
 	}
 
@@ -79,6 +84,13 @@ public class HADataSource implements DataSource {
 	@Override
 	public void setLoginTimeout(int seconds) throws SQLException {
 		this.loginTimeout = seconds;
+	}
+	
+	public void setPassword(String token) {
+		if (this.properties == null) {
+			this.properties = new Properties();
+		}
+		properties.put("password", token);
 	}
 
 }

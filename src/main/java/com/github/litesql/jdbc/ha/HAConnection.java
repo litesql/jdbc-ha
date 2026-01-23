@@ -11,6 +11,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.jkiss.code.NotNull;
+import org.jkiss.utils.CommonUtils;
 
 import com.dbeaver.jdbc.model.AbstractJdbcConnection;
 import com.github.litesql.jdbc.ha.client.HAClient;
@@ -44,7 +45,8 @@ public class HAConnection extends AbstractJdbcConnection {
 		this.queryTimeout = 60;
 
 		try {
-			this.client = new HAClient(new URL(url));
+			String token = CommonUtils.toString(driverProperties.get("password"), null);
+			this.client = new HAClient(new URL(url), token);
 		} catch (IOException e) {
 			throw new SQLException(e);
 		}

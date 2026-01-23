@@ -80,7 +80,7 @@ public class HADatabaseMetaData extends AbstractJdbcDatabaseMetaData<HAConnectio
     @Override
     public ResultSet getTables(String catalog, String schemaPattern, String tableNamePattern, String[] types) throws SQLException {
         verifySchemaParameters(catalog, schemaPattern);
-        if (!catalog.isEmpty()) {
+        if (catalog != null && !catalog.isEmpty()) {
         	connection.setCatalog(catalog);
         }
         try (PreparedStatement dbStat = connection.prepareStatement(
@@ -99,7 +99,7 @@ public class HADatabaseMetaData extends AbstractJdbcDatabaseMetaData<HAConnectio
         if (CommonUtils.isEmpty(tableName) || "%".equals(tableName)) {
             tableName = null;
         }
-        if (!catalog.isEmpty()) {
+        if (catalog != null && !catalog.isEmpty()) {
         	connection.setCatalog(catalog);
         }
         return executeQuery(
@@ -136,7 +136,7 @@ public class HADatabaseMetaData extends AbstractJdbcDatabaseMetaData<HAConnectio
 
     @Override
     public ResultSet getPrimaryKeys(String catalog, String schema, String tableName) throws SQLException {
-    	if (!catalog.isEmpty()) {
+    	if (catalog != null && !catalog.isEmpty()) {
         	connection.setCatalog(catalog);
         }
         String table = tableName;
@@ -182,7 +182,7 @@ public class HADatabaseMetaData extends AbstractJdbcDatabaseMetaData<HAConnectio
     @Override
     public ResultSet getIndexInfo(String catalog, String schema, String table, boolean unique, boolean approximate) throws SQLException {
         {
-        	if (!catalog.isEmpty()) {
+        	if (catalog != null && !catalog.isEmpty()) {
             	connection.setCatalog(catalog);
             }
             StringBuilder sql = new StringBuilder();
@@ -246,7 +246,7 @@ public class HADatabaseMetaData extends AbstractJdbcDatabaseMetaData<HAConnectio
     @Override
     public ResultSet getImportedKeys(String catalog, String schema, String table) throws SQLException {
         {
-        	if (!catalog.isEmpty()) {
+        	if (catalog != null && !catalog.isEmpty()) {
             	connection.setCatalog(catalog);
             }
             StringBuilder sql = new StringBuilder();
@@ -350,7 +350,7 @@ public class HADatabaseMetaData extends AbstractJdbcDatabaseMetaData<HAConnectio
 
     @Override
     public ResultSet getExportedKeys(String catalog, String schema, String table) throws SQLException {
-    	if (!catalog.isEmpty()) {
+    	if (catalog != null && !catalog.isEmpty()) {
         	connection.setCatalog(catalog);
         }
         PrimaryKeyFinder pkFinder = new PrimaryKeyFinder(connection, table);
@@ -469,7 +469,7 @@ public class HADatabaseMetaData extends AbstractJdbcDatabaseMetaData<HAConnectio
         if (foreignTable == null) {
             return getImportedKeys(parentCatalog, parentSchema, parentTable);
         }
-        if (!parentCatalog.isEmpty()) {
+        if (parentCatalog != null && !parentCatalog.isEmpty()) {
         	connection.setCatalog(parentCatalog);
         }
 
