@@ -37,6 +37,8 @@ public class HAClient {
     private DatabaseServiceBlockingV2Stub stub;
     private CountDownLatch latch;
     private QueryResponse responseRef;
+    
+    private long txseq;
 
     public HAClient(URL url, String token) {    	
         this.replicationID = url.getPath();
@@ -58,6 +60,10 @@ public class HAClient {
             @Override
             public void onNext(QueryResponse response) {                
                 responseRef = response;
+                
+                if (response.getTxseq() > 0) {
+                	txseq = response.getTxseq(); 
+                }
                 latch.countDown();
             }
 
@@ -183,6 +189,10 @@ public class HAClient {
 
 	public void setReplicationID(String replicationID) {
 		this.replicationID = replicationID;
+	}
+	
+	public long getTxseq() {
+		return txseq;
 	}
 
 	private boolean isIndexedParams(Map<Object, Object> parameter) {

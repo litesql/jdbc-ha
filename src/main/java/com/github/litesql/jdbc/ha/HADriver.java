@@ -1,11 +1,18 @@
 package com.github.litesql.jdbc.ha;
 
+import java.io.UnsupportedEncodingException;
+import java.net.InetAddress;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLDecoder;
+import java.net.UnknownHostException;
 import java.sql.Connection;
 import java.sql.Driver;
 import java.sql.DriverManager;
 import java.sql.DriverPropertyInfo;
 import java.sql.SQLException;
 import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -14,30 +21,27 @@ import java.util.logging.Logger;
 
 public class HADriver implements Driver {
 
-	private static HADriver instance;
-
 	static {
 		Logger logger = Logger.getLogger("com.github.litesql.jdbc.driver.ha");
 		parentLogger = logger;
 		try {
-			DriverManager.registerDriver(getInstance());
+			DriverManager.registerDriver(new HADriver());
 		} catch (Exception e) {
 			logger.log(Level.SEVERE, "Could not register driver", e);
 		}
+				
+		try {
+			InetAddress localHost = InetAddress.getLocalHost();
+			hostname = localHost.getHostName();
+		} catch (UnknownHostException e) {
+			logger.log(Level.WARNING, "Could not get hostname", e);
+		}
+		
 	}
 
 	private static final java.util.logging.Logger parentLogger;
-
-	static synchronized HADriver getInstance() {
-		if (instance == null) {
-			instance = new HADriver();
-		}
-		return instance;
-	}
-
-	public HADriver() {
-
-	}
+	
+	private static String hostname = null;
 
 	@Override
 	public Connection connect(String url, Properties info) throws SQLException {
@@ -50,7 +54,45 @@ public class HADriver implements Driver {
 				props.put(propName, info.get(propName));
 			}
 		}
+
+		try {
+			Map<String, String> queryParam = parseURLOptions(targetUrl);
+			props.putAll(queryParam);
+		} catch (Exception e) {
+		}
+
+		String replicationDir = (String) props.getOrDefault(HAConstants.CONNECTION_PROPERTY_EMBEDDED_REPLICAS_DIR, System.getProperty("java.io.tmpdir")); 
+		String replicationURL = (String) props.get(HAConstants.CONNECTION_PROPERTY_REPLICATION_URL);
+		String replicationStream = (String) props.get(HAConstants.CONNECTION_PROPERTY_REPLICATION_STREAM);
+		String replicationDurable = (String) props.getOrDefault(HAConstants.CONNECTION_PROPERTY_REPLICATION_DURABLE, hostname);
+
+		if (replicationDir != null && replicationURL != null && replicationStream != null
+				&& replicationDurable != null) {
+			HAEmbeddedReplicasManager.load(replicationDir, replicationURL, replicationStream, replicationDurable);
+		}
 		return new HAConnection(this, targetUrl, props);
+	}
+
+	private Map<String, String> parseURLOptions(String urlString)
+			throws MalformedURLException, UnsupportedEncodingException {
+		URL url = new URL(urlString);
+		String queryString = url.getQuery(); // Get only the query part
+
+		Map<String, String> queryParams = new HashMap<>();
+		if (queryString != null) {
+			String[] params = queryString.split("&");
+			for (String param : params) {
+				String[] keyValue = param.split("=");
+				if (keyValue.length == 2) {
+					String key = URLDecoder.decode(keyValue[0], "UTF-8");
+					String value = URLDecoder.decode(keyValue[1], "UTF-8");
+					queryParams.put(key, value);
+				}
+			}
+		}
+
+		return queryParams;
+
 	}
 
 	@Override

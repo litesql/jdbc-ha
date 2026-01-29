@@ -9,12 +9,12 @@ public class HAExecutionResult {
     private List<Object[]> rows = new ArrayList<>();
     private long rowsAffected;
 	
-	protected HAExecutionResult(List<String> columns, List<Object[]> rows) {
+	public HAExecutionResult(List<String> columns, List<Object[]> rows) {
 		this.columns = columns;
 		this.rows = rows;
 	}
 	
-	protected HAExecutionResult(long rowsAffected) {
+	public HAExecutionResult(long rowsAffected) {
 		this.rowsAffected = rowsAffected;		
 	}
 

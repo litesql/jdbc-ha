@@ -2,6 +2,7 @@ package com.github.litesql.jdbc.ha;
 
 import java.io.PrintWriter;
 import java.sql.Connection;
+import java.sql.Driver;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
 import java.util.Properties;
@@ -10,14 +11,24 @@ import java.util.logging.Logger;
 import javax.sql.DataSource;
 
 public class HADataSource implements DataSource {
-	
+
 	private String url;
-	
-	private Properties properties;
-	
+
+	private final Driver driver = new HADriver();
+
+	private final Properties properties = new Properties();
+
 	private transient PrintWriter logger;
-	
-	private int loginTimeout = 1;	
+
+	private int loginTimeout;
+
+	public HADataSource() {
+		try {
+			setLoginTimeout(30);
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+	}
 
 	public String getUrl() {
 		return url;
@@ -28,14 +39,7 @@ public class HADataSource implements DataSource {
 	}
 
 	public Properties getProperties() {
-		if(properties == null) {
-			properties = new Properties();
-		}
 		return properties;
-	}
-
-	public void setProperties(Properties properties) {
-		this.properties = properties;
 	}
 
 	@Override
@@ -50,20 +54,20 @@ public class HADataSource implements DataSource {
 
 	@Override
 	@SuppressWarnings("unchecked")
-    public <T> T unwrap(Class<T> iface) throws SQLException {
-        return (T) this;
-    }
+	public <T> T unwrap(Class<T> iface) throws SQLException {
+		return (T) this;
+	}
 
 	@Override
 	public Connection getConnection() throws SQLException {
-		return HADriver.getInstance().connect(this.url, this.properties);		
+		return driver.connect(this.url, this.properties);
 	}
 
 	@Override
 	public Connection getConnection(String user, String pass) throws SQLException {
 		Properties props = (Properties) this.getProperties().clone();
-		props.put("password", pass);
-		return getConnection();
+		props.put(HAConstants.CONNECTION_PROPERTY_PASSWORD, pass);
+		return driver.connect(this.url, props);
 	}
 
 	@Override
@@ -84,13 +88,27 @@ public class HADataSource implements DataSource {
 	@Override
 	public void setLoginTimeout(int seconds) throws SQLException {
 		this.loginTimeout = seconds;
+		properties.put(HAConstants.CONNECTION_PROPERTY_LOGIN_TIMEOUT, String.valueOf(seconds));
+	}
+
+	public void setPassword(String token) {
+		properties.put(HAConstants.CONNECTION_PROPERTY_PASSWORD, token);
+	}
+
+	public void setEmbeddedReplicasDir(String embeddedReplicasDir) {
+		properties.put(HAConstants.CONNECTION_PROPERTY_EMBEDDED_REPLICAS_DIR, embeddedReplicasDir);
 	}
 	
-	public void setPassword(String token) {
-		if (this.properties == null) {
-			this.properties = new Properties();
-		}
-		properties.put("password", token);
+	public void setReplicationURL(String url) {
+		properties.put(HAConstants.CONNECTION_PROPERTY_REPLICATION_URL, url);	
+	}
+	
+	public void setReplicationStream(String stream) {
+		properties.put(HAConstants.CONNECTION_PROPERTY_REPLICATION_STREAM, stream);	
+	}
+	
+	public void setReplicationDurable(String durable) {
+		properties.put(HAConstants.CONNECTION_PROPERTY_REPLICATION_DURABLE, durable);	
 	}
 
 }

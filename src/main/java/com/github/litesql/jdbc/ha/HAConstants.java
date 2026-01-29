@@ -8,11 +8,18 @@ public class HAConstants {
     public static final Pattern CONNECTION_URL_PATTERN = Pattern.compile("(jdbc:litesql:ha:|litesql://)(.+)");
 
     public static final int DRIVER_VERSION_MAJOR = 1;
-    public static final int DRIVER_VERSION_MINOR = 0;
-    public static final int DRIVER_VERSION_MICRO = 13;
+    public static final int DRIVER_VERSION_MINOR = 1;
+    public static final int DRIVER_VERSION_MICRO = 0;
 
     public static final String DRIVER_NAME = "LiteSQL HA";
     public static final String DRIVER_INFO = "LiteSQL HA JDBC driver";
 
     public static final String DEFAULT_ISO_TIMESTAMP_FORMAT = "yyyy-MM-dd'T'HH:mm:ss'Z'";
+
+    public static final String CONNECTION_PROPERTY_PASSWORD = "password";
+    public static final String CONNECTION_PROPERTY_EMBEDDED_REPLICAS_DIR = "embeddedReplicasDir";    
+    public static final String CONNECTION_PROPERTY_LOGIN_TIMEOUT = "loginTimeout";
+    public static final String CONNECTION_PROPERTY_REPLICATION_URL = "replicationURL";
+    public static final String CONNECTION_PROPERTY_REPLICATION_STREAM = "replicationStream";
+    public static final String CONNECTION_PROPERTY_REPLICATION_DURABLE = "replicationDurable";    
 }
