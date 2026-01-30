@@ -63,11 +63,10 @@ public class HADriver implements Driver {
 
 		String replicationDir = (String) props.getOrDefault(HAConstants.CONNECTION_PROPERTY_EMBEDDED_REPLICAS_DIR, System.getProperty("java.io.tmpdir")); 
 		String replicationURL = (String) props.get(HAConstants.CONNECTION_PROPERTY_REPLICATION_URL);
-		String replicationStream = (String) props.get(HAConstants.CONNECTION_PROPERTY_REPLICATION_STREAM);
+		String replicationStream = (String) props.getOrDefault(HAConstants.CONNECTION_PROPERTY_REPLICATION_STREAM, "ha_replication");
 		String replicationDurable = (String) props.getOrDefault(HAConstants.CONNECTION_PROPERTY_REPLICATION_DURABLE, hostname);
 
-		if (replicationDir != null && replicationURL != null && replicationStream != null
-				&& replicationDurable != null) {
+		if (replicationURL != null && !replicationURL.isEmpty() && replicationDurable != null && !replicationDurable.isEmpty()) {
 			HAEmbeddedReplicasManager.load(replicationDir, replicationURL, replicationStream, replicationDurable);
 		}
 		return new HAConnection(this, targetUrl, props);
@@ -76,7 +75,7 @@ public class HADriver implements Driver {
 	private Map<String, String> parseURLOptions(String urlString)
 			throws MalformedURLException, UnsupportedEncodingException {
 		URL url = new URL(urlString);
-		String queryString = url.getQuery(); // Get only the query part
+		String queryString = url.getQuery();
 
 		Map<String, String> queryParams = new HashMap<>();
 		if (queryString != null) {

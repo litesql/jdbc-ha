@@ -75,7 +75,6 @@ public class HAClient {
 
             @Override
             public void onCompleted() {
-                System.out.println("Finished.");
             }
         };
         

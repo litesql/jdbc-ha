@@ -2,6 +2,7 @@ package com.github.litesql.jdbc.ha;
 
 import java.io.IOException;
 import java.net.URL;
+import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -27,6 +28,11 @@ public class HAConnection extends AbstractJdbcConnection {
 	private final String url;
 	@NotNull
 	private final Map<String, Object> driverProperties;
+	
+	private HAEmbeddedReplicasManager.ReplicaConn embeddedReplicaManager;
+	private Connection embeddedReplica;
+	
+	private boolean closed;
 
 	private boolean autoCommit;
 
@@ -43,10 +49,16 @@ public class HAConnection extends AbstractJdbcConnection {
 		this.driverProperties = driverProperties;
 		this.autoCommit = true;
 		this.queryTimeout = 60;
+		this.closed = false;
+		
 
 		try {
 			String token = CommonUtils.toString(driverProperties.get("password"), null);
 			this.client = new HAClient(new URL(url), token);
+			this.embeddedReplicaManager = HAEmbeddedReplicasManager.getReplica(client.getReplicationID());
+			if (this.embeddedReplicaManager != null) {
+				this.embeddedReplica = this.embeddedReplicaManager.createConn();
+			}
 		} catch (IOException e) {
 			throw new SQLException(e);
 		}
@@ -124,6 +136,18 @@ public class HAConnection extends AbstractJdbcConnection {
 	public HAClient getClient() {
 		return client;
 	}
+	
+	protected Connection getEmbeddedReplica() {
+		return this.embeddedReplica;
+	}
+	
+	protected boolean isReplicaUpdated() {
+		if (this.embeddedReplicaManager == null) {
+			return false;
+		}
+		
+		return this.embeddedReplicaManager.txseq >= getClient().getTxseq();
+	}
 
 	@NotNull
 	public String getUrl() {
@@ -158,13 +182,17 @@ public class HAConnection extends AbstractJdbcConnection {
 	}
 
 	@Override
-	public void close() throws SQLException {
+	public void close() throws SQLException {		
 		client.close();
+		if (embeddedReplica != null) {
+			embeddedReplica.close();
+		}
+		this.closed = true;
 	}
 
 	@Override
 	public boolean isClosed() {
-		return false;
+		return this.closed;
 	}
 
 	@Override
@@ -181,6 +209,15 @@ public class HAConnection extends AbstractJdbcConnection {
 			throw new SQLException("catalog is empty");
 		}
 		getClient().setReplicationID(catalog);
+		if (this.embeddedReplica != null) {
+			this.embeddedReplica.close();
+		}
+		this.embeddedReplicaManager = null;
+		this.embeddedReplica = null;
+		this.embeddedReplicaManager = HAEmbeddedReplicasManager.getReplica(getClient().getReplicationID());
+		if (this.embeddedReplicaManager != null) {
+			this.embeddedReplica = this.embeddedReplicaManager.createConn();
+		}
 	}
 
 	@Override

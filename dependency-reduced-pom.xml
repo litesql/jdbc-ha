@@ -4,7 +4,7 @@
   <groupId>io.github.litesql</groupId>
   <artifactId>jdbc-ha</artifactId>
   <name>HA JDBC Driver</name>
-  <version>1.0.13</version>
+  <version>1.1.0-SNAPSHOT</version>
   <description>HA JDBC driver dbeaver compatible</description>
   <url>https://github.com/litesql/jdbc-ha</url>
   <developers>
@@ -68,7 +68,6 @@
             <configuration>
               <outputDirectory>${project.build.directory}/dist</outputDirectory>
               <includeScope>runtime</includeScope>
-              <stripClassifier>com.github.litesql.jdbc.driver.ha</stripClassifier>
             </configuration>
           </execution>
         </executions>
@@ -177,6 +176,9 @@
                     </excludes>
                   </artifactSet>
                   <finalName>jdbc-ha-full-${project.version}</finalName>
+                  <transformers>
+                    <transformer />
+                  </transformers>
                 </configuration>
               </execution>
             </executions>
@@ -247,6 +249,7 @@
     </dependency>
   </dependencies>
   <properties>
-    <java.version>17</java.version>
+    <maven.compiler.target>11</maven.compiler.target>
+    <maven.compiler.source>11</maven.compiler.source>
   </properties>
 </project>
