@@ -5,14 +5,14 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>io.github.litesql</groupId>
 	<artifactId>jdbc-ha</artifactId>
-	<version>1.1.0</version>
+	<version>1.1.1</version>
 
 	<name>HA JDBC Driver</name>
 	<description>HA JDBC driver dbeaver compatible</description>
 	<url>https://github.com/litesql/jdbc-ha</url>
-	<properties>		
+	<properties>
 		<maven.compiler.source>11</maven.compiler.source>
-        <maven.compiler.target>11</maven.compiler.target>
+		<maven.compiler.target>11</maven.compiler.target>
 	</properties>
 
 	<profiles>
@@ -148,7 +148,7 @@
 		<dependency>
 			<groupId>build.buf.gen</groupId>
 			<artifactId>litesql_sqlite-ha_grpc_java</artifactId>
-			<version>1.78.0.1.20260110202014.9b378ae49587</version>
+			<version>1.78.0.1.20260130221958.28995bf269cb</version>
 		</dependency>
 		<dependency>
 			<groupId>io.grpc</groupId>
@@ -225,7 +225,7 @@
 						</goals>
 						<configuration>
 							<outputDirectory>${project.build.directory}/dist</outputDirectory>
-							<includeScope>runtime</includeScope>							
+							<includeScope>runtime</includeScope>
 						</configuration>
 					</execution>
 				</executions>

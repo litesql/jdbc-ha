@@ -54,7 +54,8 @@ public class HAConnection extends AbstractJdbcConnection {
 
 		try {
 			String token = CommonUtils.toString(driverProperties.get("password"), null);
-			this.client = new HAClient(new URL(url), token);
+			boolean enableSSL = Boolean.TRUE.equals(driverProperties.get(HAConstants.CONNECTION_PROPERTY_ENABLE_SSL));
+			this.client = new HAClient(new URL(url), token, enableSSL);
 			this.embeddedReplicaManager = HAEmbeddedReplicasManager.getReplica(client.getReplicationID());
 			if (this.embeddedReplicaManager != null) {
 				this.embeddedReplica = this.embeddedReplicaManager.createConn();

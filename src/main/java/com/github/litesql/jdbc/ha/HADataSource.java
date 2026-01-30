@@ -90,6 +90,10 @@ public class HADataSource implements DataSource {
 		this.loginTimeout = seconds;
 		properties.put(HAConstants.CONNECTION_PROPERTY_LOGIN_TIMEOUT, String.valueOf(seconds));
 	}
+	
+	public void setEnableSSL(boolean enable) {
+		properties.put(HAConstants.CONNECTION_PROPERTY_ENABLE_SSL, String.valueOf(enable));	
+	}
 
 	public void setPassword(String token) {
 		properties.put(HAConstants.CONNECTION_PROPERTY_PASSWORD, token);

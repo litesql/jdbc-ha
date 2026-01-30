@@ -40,15 +40,18 @@ public class HAClient {
     
     private long txseq;
 
-    public HAClient(URL url, String token) {    	
+    public HAClient(URL url, String token, boolean enableSSL) {    	
         this.replicationID = url.getPath();
         if (this.replicationID.startsWith("/")) {
         	this.replicationID = this.replicationID.substring(1);
         }
-
-        ManagedChannel channel = ManagedChannelBuilder.forAddress(url.getHost(), url.getPort())
-                .usePlaintext()
-                .build();
+        
+        ManagedChannelBuilder<?> channelBuilder = ManagedChannelBuilder.forAddress(url.getHost(), url.getPort()); 
+        if (!enableSSL) {        	
+        	channelBuilder = channelBuilder.usePlaintext();
+        }
+        
+        ManagedChannel channel = channelBuilder.build();
         
         CallCredentials credentials = new Credentials(token);
 
