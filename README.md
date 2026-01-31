@@ -20,7 +20,7 @@ JDBC Driver for [SQLite HA](https://github.com/litesql/ha)
     <dependency>
         <groupId>io.github.litesql</groupId>
         <artifactId>jdbc-ha</artifactId>
-        <version>1.1.1</version>
+        <version>1.1.2</version>
     </dependency>
 </dependencies>
 
@@ -40,7 +40,22 @@ To use the `com.github.litesql.jdbc.ha.HADataSource`, configure it in your appli
 ```java
 HADataSource dataSource = new HADataSource();
 // Set properties as needed. Example:
-datasource.setUrl("litesql://localhost:5001");
+datasource.setUrl("litesql://localhost:8080");
+```
+
+#### 2.1 Embedded replicas
+
+Use HAClient object to download replicas and execute read queries faster. All write operations are redirected to te server.
+
+```java
+String dir = "/dest/path";
+
+HAClient client = new HAClient(new URL("http://localhost:8080"), "secret", false);
+client.downloadAllCurrentReplicas(dir, true);
+
+dataSource.setEmbeddedReplicasDir(dir);
+dataSource.setReplicationURL("nats://localhost:4222");;
+dataSource.setReplicationDurable("unique_name");
 ```
 
 ### 3. Example Usage
@@ -64,7 +79,7 @@ For detailed documentation, visit the [official documentation](https://github.co
 
 ## Contributing
 
-Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct, and the process for submitting pull requests.
+Contributions are welcome! Please open an issue or submit a pull request.
 
 ## License
 
