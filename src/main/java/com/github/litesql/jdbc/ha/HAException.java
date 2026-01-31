@@ -19,37 +19,37 @@ package com.github.litesql.jdbc.ha;
 import java.sql.SQLException;
 
 public class HAException extends SQLException {
-	
+
 	private static final long serialVersionUID = 1;
-	
-    public HAException(String reason, String SQLState, int vendorCode) {
-        super(reason, SQLState, vendorCode);
-    }
 
-    public HAException(String reason, String SQLState) {
-        super(reason, SQLState);
-    }
+	public HAException(String reason, String SQLState, int vendorCode) {
+		super(reason, SQLState, vendorCode);
+	}
 
-    public HAException(String reason) {
-        super(reason);
-    }
+	public HAException(String reason, String SQLState) {
+		super(reason, SQLState);
+	}
 
-    public HAException() {
-    }
+	public HAException(String reason) {
+		super(reason);
+	}
 
-    public HAException(Throwable cause) {
-        super(cause);
-    }
+	public HAException() {
+	}
 
-    public HAException(String reason, Throwable cause) {
-        super(reason, cause);
-    }
+	public HAException(Throwable cause) {
+		super(cause);
+	}
 
-    public HAException(String reason, String sqlState, Throwable cause) {
-        super(reason, sqlState, cause);
-    }
+	public HAException(String reason, Throwable cause) {
+		super(reason, cause);
+	}
 
-    public HAException(String reason, String sqlState, int vendorCode, Throwable cause) {
-        super(reason, sqlState, vendorCode, cause);
-    }
+	public HAException(String reason, String sqlState, Throwable cause) {
+		super(reason, sqlState, cause);
+	}
+
+	public HAException(String reason, String sqlState, int vendorCode, Throwable cause) {
+		super(reason, sqlState, vendorCode, cause);
+	}
 }

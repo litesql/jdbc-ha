@@ -3,8 +3,8 @@ Bundle-ManifestVersion: 2
 Automatic-Module-Name: jdbc.ha
 Bundle-Name: LiteSQL HA JDBC Driver
 Bundle-SymbolicName: jdbc-ha
-Bundle-Version: 1.1.1
-Bundle-Release-Date: 20260130
+Bundle-Version: 1.1.2
+Bundle-Release-Date: 20260131
 Bundle-RequiredExecutionEnvironment: JavaSE-11
 Bundle-ActivationPolicy: lazy
 Export-Package: com.github.litesql.jdbc.ha,

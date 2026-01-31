@@ -28,29 +28,28 @@ public class HAConnection extends AbstractJdbcConnection {
 	private final String url;
 	@NotNull
 	private final Map<String, Object> driverProperties;
-	
+
 	private HAEmbeddedReplicasManager.ReplicaConn embeddedReplicaManager;
 	private Connection embeddedReplica;
-	
+
 	private boolean closed;
 
 	private boolean autoCommit;
 
 	private HADatabaseMetaData databaseMetaData;
-	
+
 	private int queryTimeout;
 
 	private Logger logger = Logger.getLogger("com.github.litesql.jdbc.driver.ha");
 
-	public HAConnection(@NotNull HADriver driver, @NotNull String url, @NotNull Map<String, Object> driverProperties)
+	public HAConnection(@NotNull HADriver driver, @NotNull String url, int queryTimeout, @NotNull Map<String, Object> driverProperties)
 			throws SQLException {
 		this.driver = driver;
 		this.url = url;
 		this.driverProperties = driverProperties;
-		this.autoCommit = true;
-		this.queryTimeout = 60;
+		this.autoCommit = true;		
+		this.queryTimeout = queryTimeout;
 		this.closed = false;
-		
 
 		try {
 			String token = CommonUtils.toString(driverProperties.get("password"), null);
@@ -137,16 +136,16 @@ public class HAConnection extends AbstractJdbcConnection {
 	public HAClient getClient() {
 		return client;
 	}
-	
+
 	protected Connection getEmbeddedReplica() {
 		return this.embeddedReplica;
 	}
-	
+
 	protected boolean isReplicaUpdated() {
 		if (this.embeddedReplicaManager == null) {
 			return false;
 		}
-		
+
 		return this.embeddedReplicaManager.txseq >= getClient().getTxseq();
 	}
 
@@ -168,7 +167,7 @@ public class HAConnection extends AbstractJdbcConnection {
 	@Override
 	public Statement createStatement(int resultSetType, int resultSetConcurrency, int resultSetHoldability)
 			throws SQLException {
-		return new HAStatement(this);
+		return new HAStatement(this, this.queryTimeout);
 	}
 
 	@Override
@@ -179,11 +178,11 @@ public class HAConnection extends AbstractJdbcConnection {
 
 	@NotNull
 	private HAPreparedStatement prepareStatementImpl(String sql) throws SQLException {
-		return new HAPreparedStatement(this, sql);
+		return new HAPreparedStatement(this, sql, this.queryTimeout);
 	}
 
 	@Override
-	public void close() throws SQLException {		
+	public void close() throws SQLException {
 		client.close();
 		if (embeddedReplica != null) {
 			embeddedReplica.close();

@@ -22,26 +22,26 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 
 public class HAStreamInput {
-    private InputStream stream;
-    private long length;
+	private InputStream stream;
+	private long length;
 
-    public HAStreamInput(InputStream stream, long length) {
-        this.stream = stream;
-        this.length = length;
-    }
+	public HAStreamInput(InputStream stream, long length) {
+		this.stream = stream;
+		this.length = length;
+	}
 
-    @Override
-    public String toString() {
-        try {
-            ByteArrayOutputStream result = new ByteArrayOutputStream();
-            byte[] buffer = new byte[1024];
-            for (int length; (length = stream.read(buffer)) != -1; ) {
-                result.write(buffer, 0, length);
-            }
-            return result.toString(StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            return e.getMessage();
-        }
-    }
+	@Override
+	public String toString() {
+		try {
+			ByteArrayOutputStream result = new ByteArrayOutputStream();
+			byte[] buffer = new byte[1024];
+			for (int length; (length = stream.read(buffer)) != -1;) {
+				result.write(buffer, 0, length);
+			}
+			return result.toString(StandardCharsets.UTF_8);
+		} catch (IOException e) {
+			return e.getMessage();
+		}
+	}
 
 }

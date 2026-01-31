@@ -21,7 +21,7 @@ public class Converter {
 		case "type.googleapis.com/google.protobuf.DoubleValue":
 			return com.google.protobuf.DoubleValue.parseFrom(x.getValue()).getValue();
 		case "type.googleapis.com/google.protobuf.FloatValue":
-			return com.google.protobuf.FloatValue.parseFrom(x.getValue()).getValue();	
+			return com.google.protobuf.FloatValue.parseFrom(x.getValue()).getValue();
 		case "type.googleapis.com/google.protobuf.Int64Value":
 			return com.google.protobuf.Int64Value.parseFrom(x.getValue()).getValue();
 		case "type.googleapis.com/google.protobuf.Int32Value":
@@ -46,7 +46,7 @@ public class Converter {
 		if (x == null) {
 			return Any.pack(com.google.protobuf.Empty.getDefaultInstance());
 		}
-		
+
 		if (x instanceof String) {
 			String v = (String) x;
 			return Any.pack(com.google.protobuf.StringValue.of(v));
@@ -76,13 +76,13 @@ public class Converter {
 			Boolean v = (Boolean) x;
 			return Any.pack(com.google.protobuf.BoolValue.of(v));
 		}
-		
+
 		if (x instanceof Instant) {
 			Instant v = (Instant) x;
 			return Any.pack(com.google.protobuf.Timestamp.newBuilder().setSeconds(v.getEpochSecond())
 					.setNanos(v.getNano()).build());
 		}
-		
+
 		if (x instanceof Date) {
 			Date v = (Date) x;
 			return Any.pack(com.google.protobuf.util.Timestamps.fromDate(v));

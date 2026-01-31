@@ -29,23 +29,23 @@ public class HADriver implements Driver {
 		} catch (Exception e) {
 			logger.log(Level.SEVERE, "Could not register driver", e);
 		}
-				
+
 		try {
 			InetAddress localHost = InetAddress.getLocalHost();
 			hostname = localHost.getHostName();
 		} catch (UnknownHostException e) {
 			logger.log(Level.WARNING, "Could not get hostname", e);
 		}
-		
+
 	}
 
 	private static final java.util.logging.Logger parentLogger;
-	
+
 	private static String hostname = null;
 
 	@Override
 	public Connection connect(String url, Properties info) throws SQLException {
-		String targetUrl = HAUtils.validateAndFormatUrl(url);
+		String targetUrl = HAUtils.validateAndFormatUrl(url);		
 
 		Map<String, Object> props = new LinkedHashMap<>();
 		if (info != null) {
@@ -61,15 +61,29 @@ public class HADriver implements Driver {
 		} catch (Exception e) {
 		}
 
-		String replicationDir = (String) props.getOrDefault(HAConstants.CONNECTION_PROPERTY_EMBEDDED_REPLICAS_DIR, System.getProperty("java.io.tmpdir")); 
+		String replicationDir = (String) props.getOrDefault(HAConstants.CONNECTION_PROPERTY_EMBEDDED_REPLICAS_DIR,
+				System.getProperty("java.io.tmpdir"));
 		String replicationURL = (String) props.get(HAConstants.CONNECTION_PROPERTY_REPLICATION_URL);
-		String replicationStream = (String) props.getOrDefault(HAConstants.CONNECTION_PROPERTY_REPLICATION_STREAM, "ha_replication");
-		String replicationDurable = (String) props.getOrDefault(HAConstants.CONNECTION_PROPERTY_REPLICATION_DURABLE, hostname);
+		String replicationStream = (String) props.getOrDefault(HAConstants.CONNECTION_PROPERTY_REPLICATION_STREAM,
+				"ha_replication");
+		String replicationDurable = (String) props.getOrDefault(HAConstants.CONNECTION_PROPERTY_REPLICATION_DURABLE,
+				hostname);
 
-		if (replicationURL != null && !replicationURL.isEmpty() && replicationDurable != null && !replicationDurable.isEmpty()) {
+		if (replicationURL != null && !replicationURL.isEmpty() && replicationDurable != null
+				&& !replicationDurable.isEmpty()) {
 			HAEmbeddedReplicasManager.load(replicationDir, replicationURL, replicationStream, replicationDurable);
 		}
-		return new HAConnection(this, targetUrl, props);
+		
+		int queryTimeout = 60;
+		Object timeoutObj = props.get(HAConstants.CONNECTION_PROPERTY_TIMEOUT);
+		if (timeoutObj != null) {
+			try {
+				queryTimeout = Integer.parseInt(timeoutObj.toString());
+			} catch (NumberFormatException nfe) {
+			}
+		}
+		
+		return new HAConnection(this, targetUrl, queryTimeout, props);
 	}
 
 	private Map<String, String> parseURLOptions(String urlString)

@@ -16,30 +16,30 @@
  */
 package com.github.litesql.jdbc.ha.client;
 
-import org.jkiss.utils.IOUtils;
-
 import java.io.IOException;
 import java.io.Reader;
 
+import org.jkiss.utils.IOUtils;
+
 public class HAReaderInput {
-    private Reader stream;
-    private long length;
+	private Reader stream;
+	private long length;
 
-    public HAReaderInput(Reader stream, long length) {
-        this.stream = stream;
-        this.length = length;
-    }
+	public HAReaderInput(Reader stream, long length) {
+		this.stream = stream;
+		this.length = length;
+	}
 
-    @Override
-    public String toString() {
-        try {
-            String str = IOUtils.readToString(stream);
-            if (length <= 0) {
-                return str;
-            }
-            return str.substring(0, (int) length);
-        } catch (IOException e) {
-            return e.getMessage();
-        }
-    }
+	@Override
+	public String toString() {
+		try {
+			String str = IOUtils.readToString(stream);
+			if (length <= 0) {
+				return str;
+			}
+			return str.substring(0, (int) length);
+		} catch (IOException e) {
+			return e.getMessage();
+		}
+	}
 }

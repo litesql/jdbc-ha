@@ -90,9 +90,9 @@ public class HADataSource implements DataSource {
 		this.loginTimeout = seconds;
 		properties.put(HAConstants.CONNECTION_PROPERTY_LOGIN_TIMEOUT, String.valueOf(seconds));
 	}
-	
+
 	public void setEnableSSL(boolean enable) {
-		properties.put(HAConstants.CONNECTION_PROPERTY_ENABLE_SSL, String.valueOf(enable));	
+		properties.put(HAConstants.CONNECTION_PROPERTY_ENABLE_SSL, String.valueOf(enable));
 	}
 
 	public void setPassword(String token) {
@@ -102,17 +102,21 @@ public class HADataSource implements DataSource {
 	public void setEmbeddedReplicasDir(String embeddedReplicasDir) {
 		properties.put(HAConstants.CONNECTION_PROPERTY_EMBEDDED_REPLICAS_DIR, embeddedReplicasDir);
 	}
-	
+
 	public void setReplicationURL(String url) {
-		properties.put(HAConstants.CONNECTION_PROPERTY_REPLICATION_URL, url);	
+		properties.put(HAConstants.CONNECTION_PROPERTY_REPLICATION_URL, url);
 	}
-	
+
 	public void setReplicationStream(String stream) {
-		properties.put(HAConstants.CONNECTION_PROPERTY_REPLICATION_STREAM, stream);	
+		properties.put(HAConstants.CONNECTION_PROPERTY_REPLICATION_STREAM, stream);
+	}
+
+	public void setReplicationDurable(String durable) {
+		properties.put(HAConstants.CONNECTION_PROPERTY_REPLICATION_DURABLE, durable);
 	}
 	
-	public void setReplicationDurable(String durable) {
-		properties.put(HAConstants.CONNECTION_PROPERTY_REPLICATION_DURABLE, durable);	
+	public void setTimeout(int seconds) {
+		properties.put(HAConstants.CONNECTION_PROPERTY_TIMEOUT, String.valueOf(seconds));
 	}
 
 }

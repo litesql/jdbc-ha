@@ -29,13 +29,13 @@ public class HAStatement extends AbstractJdbcStatement<HAConnection> {
 
 	protected int queryTimeout;
 
-	public HAStatement(@NotNull HAConnection connection) throws SQLException {
+	public HAStatement(@NotNull HAConnection connection, int queryTimeout) throws SQLException {
 		super(connection);
 		this.connection = connection;
-		this.queryTimeout = 60; // default timeout in seconds
+		this.queryTimeout = queryTimeout;
 	}
 
-	private HAExecutionResult executeQueryOnConnection(Connection conn, String sql) throws SQLException {		
+	private HAExecutionResult executeQueryOnConnection(Connection conn, String sql) throws SQLException {
 		try (Statement stmt = conn.createStatement()) {
 			List<String> columns = new ArrayList<>();
 			List<Object[]> rows = new ArrayList<>();
@@ -58,7 +58,7 @@ public class HAStatement extends AbstractJdbcStatement<HAConnection> {
 	@Override
 	public ResultSet executeQuery(String sql) throws SQLException {
 		Connection embeddedReplica = this.connection.getEmbeddedReplica();
-		if (embeddedReplica != null && this.connection.isReplicaUpdated() && sql.trim().toUpperCase().startsWith("SELECT ")) {
+		if (embeddedReplica != null && this.connection.isReplicaUpdated() && HAUtils.isSelectQuery(sql)) {
 			executionResult = executeQueryOnConnection(embeddedReplica, sql);
 		} else {
 			executionResult = connection.getClient().executeQuery(sql, parameters, this.queryTimeout);
@@ -81,7 +81,7 @@ public class HAStatement extends AbstractJdbcStatement<HAConnection> {
 	@Override
 	public boolean execute() throws SQLException {
 		Connection embeddedReplica = this.connection.getEmbeddedReplica();
-		if (embeddedReplica != null && this.connection.isReplicaUpdated() && queryText.trim().toUpperCase().startsWith("SELECT ")) {
+		if (embeddedReplica != null && this.connection.isReplicaUpdated() && HAUtils.isSelectQuery(queryText)) {
 			executionResult = executeQueryOnConnection(embeddedReplica, queryText);
 		} else {
 			executionResult = connection.getClient().execute(queryText, parameters, this.queryTimeout);
