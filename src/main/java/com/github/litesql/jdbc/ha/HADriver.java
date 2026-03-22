@@ -45,7 +45,7 @@ public class HADriver implements Driver {
 
 	@Override
 	public Connection connect(String url, Properties info) throws SQLException {
-		String targetUrl = HAUtils.validateAndFormatUrl(url);		
+		String targetUrl = HAUtils.validateAndFormatUrl(url);
 
 		Map<String, Object> props = new LinkedHashMap<>();
 		if (info != null) {
@@ -73,7 +73,7 @@ public class HADriver implements Driver {
 				&& !replicationDurable.isEmpty()) {
 			HAEmbeddedReplicasManager.load(replicationDir, replicationURL, replicationStream, replicationDurable);
 		}
-		
+
 		int queryTimeout = 60;
 		Object timeoutObj = props.get(HAConstants.CONNECTION_PROPERTY_TIMEOUT);
 		if (timeoutObj != null) {
@@ -82,7 +82,7 @@ public class HADriver implements Driver {
 			} catch (NumberFormatException nfe) {
 			}
 		}
-		
+
 		return new HAConnection(this, targetUrl, queryTimeout, props);
 	}
 

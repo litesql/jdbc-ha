@@ -42,12 +42,12 @@ public class HAConnection extends AbstractJdbcConnection {
 
 	private Logger logger = Logger.getLogger("com.github.litesql.jdbc.driver.ha");
 
-	public HAConnection(@NotNull HADriver driver, @NotNull String url, int queryTimeout, @NotNull Map<String, Object> driverProperties)
-			throws SQLException {
+	public HAConnection(@NotNull HADriver driver, @NotNull String url, int queryTimeout,
+			@NotNull Map<String, Object> driverProperties) throws SQLException {
 		this.driver = driver;
 		this.url = url;
 		this.driverProperties = driverProperties;
-		this.autoCommit = true;		
+		this.autoCommit = true;
 		this.queryTimeout = queryTimeout;
 		this.closed = false;
 

@@ -6,6 +6,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -45,6 +47,9 @@ public class HAClient {
 	private DatabaseServiceBlockingV2Stub stub;
 	private CountDownLatch latch;
 	private QueryResponse responseRef;
+
+	private ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
+	private boolean badConn = false;
 
 	private long txseq;
 
@@ -93,6 +98,17 @@ public class HAClient {
 		};
 
 		this.requestObserver = asyncStub.query(responseObserver);
+
+		Runnable task = () -> {
+			try {
+				send("SELECT 1", null, QueryType.QUERY_TYPE_PING, 3);
+			} catch (SQLException e) {
+				e.printStackTrace();
+				badConn = true;
+				executor.shutdown();
+			}
+		};
+		executor.scheduleWithFixedDelay(task, 25, 25, TimeUnit.SECONDS);
 	}
 
 	public void downloadCurrentReplica(String dir, String replicationID, boolean override)
@@ -220,6 +236,9 @@ public class HAClient {
 
 	private synchronized QueryResponse send(String sql, Map<Object, Object> parameters, QueryType type, int timeout)
 			throws SQLException {
+		if (this.badConn) {
+			throw new SQLException("bad connection");
+		}
 		this.latch = new CountDownLatch(1);
 		QueryRequest.Builder builder = QueryRequest.newBuilder().setReplicationId(this.replicationID).setSql(sql)
 				.setType(type);

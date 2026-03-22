@@ -8,10 +8,10 @@ public class HAConstants {
 	public static final Pattern CONNECTION_URL_PATTERN = Pattern.compile("(jdbc:litesql:ha:|litesql://)(.+)");
 
 	public static final int DEFAULT_TIMEOUT = 60;
-	
+
 	public static final int DRIVER_VERSION_MAJOR = 1;
 	public static final int DRIVER_VERSION_MINOR = 1;
-	public static final int DRIVER_VERSION_MICRO = 2;
+	public static final int DRIVER_VERSION_MICRO = 3;
 
 	public static final String DRIVER_NAME = "LiteSQL HA";
 	public static final String DRIVER_INFO = "LiteSQL HA JDBC driver";

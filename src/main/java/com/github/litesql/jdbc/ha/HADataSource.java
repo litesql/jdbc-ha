@@ -114,7 +114,7 @@ public class HADataSource implements DataSource {
 	public void setReplicationDurable(String durable) {
 		properties.put(HAConstants.CONNECTION_PROPERTY_REPLICATION_DURABLE, durable);
 	}
-	
+
 	public void setTimeout(int seconds) {
 		properties.put(HAConstants.CONNECTION_PROPERTY_TIMEOUT, String.valueOf(seconds));
 	}
