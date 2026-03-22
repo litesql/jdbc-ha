@@ -26,7 +26,7 @@ Add the dependency to your `pom.xml`:
     <dependency>
         <groupId>io.github.litesql</groupId>
         <artifactId>jdbc-ha</artifactId>
-        <version>1.1.2</version>
+        <version>1.1.3</version>
     </dependency>
 </dependencies>
 
@@ -45,7 +45,7 @@ Add to your `build.gradle`:
 
 ```gradle
 dependencies {
-    implementation 'io.github.litesql:jdbc-ha:1.1.2'
+    implementation 'io.github.litesql:jdbc-ha:1.1.3'
 }
 
 repositories {
