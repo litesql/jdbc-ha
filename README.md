@@ -129,7 +129,7 @@ To manage your SQLite HA database using DBeaver:
 1. [Download](https://github.com/litesql/jdbc-ha/releases) the full JAR file
 2. Open DBeaver and go to **Database → New Database Connection**
 3. Configure the custom driver following [DBeaver's driver setup guide](https://dbeaver.com/docs/dbeaver/Driver-Manager/#add-a-new-driver)
-4. Use the configuration shown below:
+4. Use the configuration shown below (driver class `com.github.litesql.jdbc.ha.HADriver`):
 
 ![DBeaver Configuration](./dbeaver-config.png)
 
