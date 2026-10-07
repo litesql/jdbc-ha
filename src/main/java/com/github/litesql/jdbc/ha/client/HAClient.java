@@ -53,14 +53,14 @@ public class HAClient {
 
 	private long txseq;
 
-	public HAClient(URL url, String token, boolean enableSSL) {
+	public HAClient(URL url, String token, boolean disableSSL) {
 		this.replicationID = url.getPath();
 		if (this.replicationID.startsWith("/")) {
 			this.replicationID = this.replicationID.substring(1);
 		}
 
 		ManagedChannelBuilder<?> channelBuilder = ManagedChannelBuilder.forAddress(url.getHost(), url.getPort());
-		if (!enableSSL) {
+		if (disableSSL || url.getProtocol().equals("http")) {
 			channelBuilder = channelBuilder.usePlaintext();
 		}
 
