@@ -10,8 +10,8 @@ public class HAConstants {
 	public static final int DEFAULT_TIMEOUT = 60;
 
 	public static final int DRIVER_VERSION_MAJOR = 1;
-	public static final int DRIVER_VERSION_MINOR = 1;
-	public static final int DRIVER_VERSION_MICRO = 3;
+	public static final int DRIVER_VERSION_MINOR = 2;
+	public static final int DRIVER_VERSION_MICRO = 1;
 
 	public static final String DRIVER_NAME = "LiteSQL HA";
 	public static final String DRIVER_INFO = "LiteSQL HA JDBC driver";
