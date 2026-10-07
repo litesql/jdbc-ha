@@ -149,6 +149,12 @@
 			<groupId>build.buf.gen</groupId>
 			<artifactId>litesql_sqlite-ha_grpc_java</artifactId>
 			<version>1.84.0.2.20261007105339.e0adf155412e</version>
+			<exclusions>
+				<exclusion>
+					<groupId>com.google.protobuf</groupId>
+					<artifactId>protobuf-java</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>io.grpc</groupId>
