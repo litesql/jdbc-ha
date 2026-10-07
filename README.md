@@ -26,7 +26,7 @@ Add the dependency to your `pom.xml`:
     <dependency>
         <groupId>io.github.litesql</groupId>
         <artifactId>jdbc-ha</artifactId>
-        <version>1.2.1</version>
+        <version>1.2.2</version>
     </dependency>
 </dependencies>
 
@@ -45,7 +45,7 @@ Add to your `build.gradle`:
 
 ```gradle
 dependencies {
-    implementation 'io.github.litesql:jdbc-ha:1.2.1'
+    implementation 'io.github.litesql:jdbc-ha:1.2.2'
 }
 
 repositories {
@@ -126,10 +126,10 @@ dataSource.setReplicationDurable("unique_replica_name");
 
 To manage your SQLite HA database using DBeaver:
 
-1. [Download](https://github.com/litesql/jdbc-ha/releases) the full JAR file
-2. Open DBeaver and go to **Database → New Database Connection**
+1. Open DBeaver and go to **Database → New Database Connection**
+2. [Download](https://github.com/litesql/jdbc-ha/releases) the full JAR file or use Add Artifact option.
 3. Configure the custom driver following [DBeaver's driver setup guide](https://dbeaver.com/docs/dbeaver/Driver-Manager/#add-a-new-driver)
-4. Use the configuration shown below (driver class `com.github.litesql.jdbc.ha.HADriver`):
+4. Use the configuration shown below (class name `com.github.litesql.jdbc.ha.HADriver`):
 
 ![DBeaver Configuration](./dbeaver-config.png)
 
