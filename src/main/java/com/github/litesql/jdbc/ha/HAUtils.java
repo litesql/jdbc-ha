@@ -1,17 +1,32 @@
 package com.github.litesql.jdbc.ha;
 
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Locale;
 import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.jkiss.code.NotNull;
 
 public class HAUtils {
 
-	public static String quote(String identifier) {
-		return "'" + identifier + "'";
+	private static final Pattern DML_KEYWORD_PATTERN = Pattern
+			.compile("\\b(insert|update|delete|replace)\\b", Pattern.CASE_INSENSITIVE);
+
+	public static String quote(String literal) {
+		if (literal == null) {
+			return "NULL";
+		}
+		return "'" + escape(literal) + "'";
 	}
 
 	/**
@@ -22,40 +37,63 @@ public class HAUtils {
 	 * @return Unquoted identifier
 	 */
 	public static String unquote(String name) {
-		if (name == null)
-			return name;
+		if (name == null) {
+			return null;
+		}
 		name = name.trim();
-		if (name.length() > 2 && ((name.startsWith("`") && name.endsWith("`"))
-				|| (name.startsWith("\"") && name.endsWith("\"")) || (name.startsWith("[") && name.endsWith("]")))) {
-			// unquote to be consistent with column names returned by getColumns()
-			name = name.substring(1, name.length() - 1);
+		if (name.length() >= 2) {
+			if (name.startsWith("`") && name.endsWith("`")) {
+				return name.substring(1, name.length() - 1).replace("``", "`");
+			}
+			if (name.startsWith("\"") && name.endsWith("\"")) {
+				return name.substring(1, name.length() - 1).replace("\"\"", "\"");
+			}
+			if (name.startsWith("[") && name.endsWith("]")) {
+				return name.substring(1, name.length() - 1);
+			}
 		}
 		return name;
 	}
 
 	public static String escape(final String val) {
-		if (val.indexOf('\'') == 1) {
+		if (val == null) {
+			return null;
+		}
+		if (val.indexOf('\'') == -1) {
 			return val;
 		}
 		int len = val.length();
-		StringBuilder buf = new StringBuilder(len);
+		StringBuilder buf = new StringBuilder(len + 4);
 		for (int i = 0; i < len; i++) {
-			if (val.charAt(i) == '\'') {
+			char ch = val.charAt(i);
+			if (ch == '\'') {
 				buf.append('\'');
 			}
-			buf.append(val.charAt(i));
+			buf.append(ch);
 		}
 		return buf.toString();
 	}
 
 	public static ResultSet executeQuery(Connection connection, String query) throws SQLException {
-		try (Statement stat = connection.createStatement()) {
+		Statement stat = connection.createStatement();
+		try {
+			stat.closeOnCompletion();
 			return stat.executeQuery(query);
+		} catch (Throwable t) {
+			try {
+				stat.close();
+			} catch (SQLException ignored) {
+			}
+			throw t;
 		}
 	}
 
 	@NotNull
-	public static String validateAndFormatUrl(@NotNull String url) throws HAException {
+	public static String validateAndFormatUrl(String url) throws HAException {
+		if (url == null) {
+			throw new HAException("Invalid connection URL: null.\nExpected URL formats: "
+					+ HAConstants.CONNECTION_URL_EXAMPLES);
+		}
 		Matcher matcher = HAConstants.CONNECTION_URL_PATTERN.matcher(url);
 		if (!matcher.matches()) {
 			throw new HAException("Invalid connection URL: " + url + ".\nExpected URL formats: "
@@ -64,36 +102,116 @@ public class HAUtils {
 
 		String formattedUrl = url;
 		if (formattedUrl.startsWith("jdbc:litesql:ha:")) {
-			formattedUrl = formattedUrl.replaceFirst("jdbc:litesql:ha:", "");
+			formattedUrl = formattedUrl.substring("jdbc:litesql:ha:".length());
 		}
 		if (formattedUrl.startsWith("litesql://")) {
-			formattedUrl = formattedUrl.replaceFirst("litesql://", "http://");
+			formattedUrl = "http://" + formattedUrl.substring("litesql://".length());
+		} else if (formattedUrl.startsWith("litesqls://")) {
+			formattedUrl = "https://" + formattedUrl.substring("litesqls://".length());
+		} else if (formattedUrl.startsWith("//")) {
+			formattedUrl = "http:" + formattedUrl;
 		}
+
+		try {
+			URL parsed = new URL(formattedUrl);
+			if (parsed.getHost() == null || parsed.getHost().isEmpty()) {
+				throw new HAException("Missing host in connection URL: " + url);
+			}
+		} catch (MalformedURLException e) {
+			throw new HAException("Invalid connection URL: " + url + ".\nExpected URL formats: "
+					+ HAConstants.CONNECTION_URL_EXAMPLES, e);
+		}
+
 		return formattedUrl;
 	}
 
+	public static String stripLeadingComments(String sql) {
+		if (sql == null) {
+			return "";
+		}
+		int i = 0;
+		int len = sql.length();
+		while (i < len) {
+			while (i < len && Character.isWhitespace(sql.charAt(i))) {
+				i++;
+			}
+			if (i + 1 < len && sql.charAt(i) == '-' && sql.charAt(i + 1) == '-') {
+				i += 2;
+				while (i < len && sql.charAt(i) != '\n' && sql.charAt(i) != '\r') {
+					i++;
+				}
+			} else if (i + 1 < len && sql.charAt(i) == '/' && sql.charAt(i + 1) == '*') {
+				i += 2;
+				while (i + 1 < len && !(sql.charAt(i) == '*' && sql.charAt(i + 1) == '/')) {
+					i++;
+				}
+				if (i + 1 < len) {
+					i += 2;
+				} else {
+					return "";
+				}
+			} else {
+				break;
+			}
+		}
+		return sql.substring(i);
+	}
+
 	public static boolean isSelectQuery(String sql) {
-		String trimmedSql = sql.trim().toLowerCase();
-		return trimmedSql.startsWith("select") || trimmedSql.startsWith("with");
+		if (sql == null) {
+			return false;
+		}
+		String stripped = stripLeadingComments(sql).toLowerCase(Locale.ENGLISH);
+		if (stripped.startsWith("select") || stripped.startsWith("values")) {
+			return true;
+		}
+		if (stripped.startsWith("with")) {
+			return !DML_KEYWORD_PATTERN.matcher(stripped).find();
+		}
+		return false;
 	}
 
 	public static boolean isTransactionControlQuery(String sql) {
-		String trimmedSql = sql.trim().toLowerCase();
-		return trimmedSql.startsWith("begin") || trimmedSql.startsWith("commit") || trimmedSql.startsWith("rollback");
+		if (sql == null) {
+			return false;
+		}
+		String stripped = stripLeadingComments(sql).toLowerCase(Locale.ENGLISH);
+		return stripped.startsWith("begin") || stripped.startsWith("commit") || stripped.startsWith("end")
+				|| stripped.startsWith("rollback");
+	}
+
+	public static Path resolveSafePath(String dir, String replicaID) throws IOException {
+		if (dir == null || dir.isEmpty()) {
+			throw new IOException("Target directory must not be empty");
+		}
+		if (replicaID == null || replicaID.isEmpty()) {
+			throw new IOException("Replication ID must not be empty");
+		}
+		Path baseDir = Paths.get(dir).toAbsolutePath().normalize();
+		Path resolved = baseDir.resolve(replicaID).normalize();
+		if (!resolved.startsWith(baseDir)) {
+			throw new IOException("Invalid replication ID path: " + replicaID);
+		}
+		return resolved;
 	}
 
 	public static long writeFileChunk(String dir, String replicaID, byte[] data, long offset) {
 		try {
-			java.nio.file.Path path = java.nio.file.Paths.get(dir, replicaID);
-			java.nio.file.Files.createDirectories(path.getParent());
-			try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(path.toFile(), "rw")) {
+			Path path = resolveSafePath(dir, replicaID);
+			Path parent = path.getParent();
+			if (parent != null) {
+				Files.createDirectories(parent);
+			}
+			try (RandomAccessFile raf = new RandomAccessFile(path.toFile(), "rw")) {
+				if (offset == 0) {
+					raf.setLength(0);
+				}
 				raf.seek(offset);
 				raf.write(data);
 			}
 			return offset + data.length;
-		} catch (Exception e) {
-			e.printStackTrace();
-			throw new RuntimeException(e);
+		} catch (IOException e) {
+			throw new RuntimeException("Failed to write replica file chunk for " + replicaID, e);
 		}
 	}
 

@@ -1,11 +1,11 @@
 package com.github.litesql.jdbc.ha;
 
-import java.io.UnsupportedEncodingException;
 import java.net.InetAddress;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.Driver;
 import java.sql.DriverManager;
@@ -21,52 +21,64 @@ import java.util.logging.Logger;
 
 public class HADriver implements Driver {
 
+	private static final Logger parentLogger = Logger.getLogger("com.github.litesql.jdbc.driver.ha");
+
+	private static String hostname = null;
+
 	static {
-		Logger logger = Logger.getLogger("com.github.litesql.jdbc.driver.ha");
-		parentLogger = logger;
 		try {
 			DriverManager.registerDriver(new HADriver());
 		} catch (Exception e) {
-			logger.log(Level.SEVERE, "Could not register driver", e);
+			parentLogger.log(Level.SEVERE, "Could not register driver", e);
 		}
 
 		try {
 			InetAddress localHost = InetAddress.getLocalHost();
 			hostname = localHost.getHostName();
 		} catch (UnknownHostException e) {
-			logger.log(Level.WARNING, "Could not get hostname", e);
+			parentLogger.log(Level.WARNING, "Could not get hostname", e);
 		}
-
 	}
-
-	private static final java.util.logging.Logger parentLogger;
-
-	private static String hostname = null;
 
 	@Override
 	public Connection connect(String url, Properties info) throws SQLException {
+		if (!acceptsURL(url)) {
+			return null;
+		}
 		String targetUrl = HAUtils.validateAndFormatUrl(url);
 
 		Map<String, Object> props = new LinkedHashMap<>();
 		if (info != null) {
 			for (Enumeration<?> pne = info.propertyNames(); pne.hasMoreElements();) {
-				String propName = (String) pne.nextElement();
-				props.put(propName, info.get(propName));
+				String propName = String.valueOf(pne.nextElement());
+				Object val = info.get(propName);
+				if (val == null) {
+					val = info.getProperty(propName);
+				}
+				if (val != null) {
+					props.put(propName, val);
+				}
+			}
+			for (Map.Entry<Object, Object> entry : info.entrySet()) {
+				if (entry.getKey() != null && entry.getValue() != null) {
+					props.put(String.valueOf(entry.getKey()), entry.getValue());
+				}
 			}
 		}
 
 		try {
 			Map<String, String> queryParam = parseURLOptions(targetUrl);
 			props.putAll(queryParam);
-		} catch (Exception e) {
+		} catch (MalformedURLException e) {
+			throw new HAException("Invalid connection URL: " + url, e);
 		}
 
-		String replicationDir = (String) props.getOrDefault(HAConstants.CONNECTION_PROPERTY_EMBEDDED_REPLICAS_DIR,
+		String replicationDir = toStringOrDefault(props.get(HAConstants.CONNECTION_PROPERTY_EMBEDDED_REPLICAS_DIR),
 				System.getProperty("java.io.tmpdir"));
-		String replicationURL = (String) props.get(HAConstants.CONNECTION_PROPERTY_REPLICATION_URL);
-		String replicationStream = (String) props.getOrDefault(HAConstants.CONNECTION_PROPERTY_REPLICATION_STREAM,
-				"ha_replication");
-		String replicationDurable = (String) props.getOrDefault(HAConstants.CONNECTION_PROPERTY_REPLICATION_DURABLE,
+		String replicationURL = toStringOrDefault(props.get(HAConstants.CONNECTION_PROPERTY_REPLICATION_URL), null);
+		String replicationStream = toStringOrDefault(props.get(HAConstants.CONNECTION_PROPERTY_REPLICATION_STREAM),
+				HAConstants.DEFAULT_REPLICATION_STREAM);
+		String replicationDurable = toStringOrDefault(props.get(HAConstants.CONNECTION_PROPERTY_REPLICATION_DURABLE),
 				hostname);
 
 		if (replicationURL != null && !replicationURL.isEmpty() && replicationDurable != null
@@ -74,50 +86,111 @@ public class HADriver implements Driver {
 			HAEmbeddedReplicasManager.load(replicationDir, replicationURL, replicationStream, replicationDurable);
 		}
 
-		int queryTimeout = 60;
+		int queryTimeout = HAConstants.DEFAULT_TIMEOUT;
 		Object timeoutObj = props.get(HAConstants.CONNECTION_PROPERTY_TIMEOUT);
-		if (timeoutObj != null) {
+		if (timeoutObj != null && !timeoutObj.toString().trim().isEmpty()) {
 			try {
-				queryTimeout = Integer.parseInt(timeoutObj.toString());
+				queryTimeout = Integer.parseInt(timeoutObj.toString().trim());
+				if (queryTimeout < 0) {
+					throw new HAException("Connection timeout must not be negative: " + queryTimeout);
+				}
 			} catch (NumberFormatException nfe) {
+				throw new HAException("Invalid timeout value: " + timeoutObj, nfe);
 			}
 		}
 
 		return new HAConnection(this, targetUrl, queryTimeout, props);
 	}
 
-	private Map<String, String> parseURLOptions(String urlString)
-			throws MalformedURLException, UnsupportedEncodingException {
+	private static String toStringOrDefault(Object val, String defaultVal) {
+		return val != null ? val.toString() : defaultVal;
+	}
+
+	private Map<String, String> parseURLOptions(String urlString) throws MalformedURLException {
 		URL url = new URL(urlString);
 		String queryString = url.getQuery();
 
 		Map<String, String> queryParams = new HashMap<>();
-		if (queryString != null) {
+		if (queryString != null && !queryString.isEmpty()) {
 			String[] params = queryString.split("&");
 			for (String param : params) {
-				String[] keyValue = param.split("=");
-				if (keyValue.length == 2) {
-					String key = URLDecoder.decode(keyValue[0], "UTF-8");
-					String value = URLDecoder.decode(keyValue[1], "UTF-8");
+				if (param.isEmpty()) {
+					continue;
+				}
+				int eqIdx = param.indexOf('=');
+				if (eqIdx > 0) {
+					String key = URLDecoder.decode(param.substring(0, eqIdx), StandardCharsets.UTF_8);
+					String value = URLDecoder.decode(param.substring(eqIdx + 1), StandardCharsets.UTF_8);
 					queryParams.put(key, value);
+				} else if (eqIdx < 0) {
+					String key = URLDecoder.decode(param, StandardCharsets.UTF_8);
+					queryParams.put(key, "");
 				}
 			}
 		}
 
 		return queryParams;
-
 	}
 
 	@Override
 	public boolean acceptsURL(String url) {
+		if (url == null || url.isEmpty()) {
+			return false;
+		}
 		return HAConstants.CONNECTION_URL_PATTERN.matcher(url).matches();
 	}
 
 	@Override
 	public DriverPropertyInfo[] getPropertyInfo(String url, Properties info) {
-		return new DriverPropertyInfo[] {
+		Properties effective = new Properties();
+		if (info != null) {
+			effective.putAll(info);
+		}
+		if (url != null && acceptsURL(url)) {
+			try {
+				String formatted = HAUtils.validateAndFormatUrl(url);
+				effective.putAll(parseURLOptions(formatted));
+			} catch (Exception ignored) {
+			}
+		}
 
-		};
+		DriverPropertyInfo passwordProp = createProperty(HAConstants.CONNECTION_PROPERTY_PASSWORD,
+				effective.getProperty(HAConstants.CONNECTION_PROPERTY_PASSWORD, ""),
+				"Authentication token for the LiteSQL HA server");
+		DriverPropertyInfo disableSslProp = createProperty(HAConstants.CONNECTION_PROPERTY_DISABLE_SSL,
+				effective.getProperty(HAConstants.CONNECTION_PROPERTY_DISABLE_SSL, "false"),
+				"Use plaintext gRPC connection without TLS");
+		disableSslProp.choices = new String[] { "true", "false" };
+
+		DriverPropertyInfo timeoutProp = createProperty(HAConstants.CONNECTION_PROPERTY_TIMEOUT,
+				effective.getProperty(HAConstants.CONNECTION_PROPERTY_TIMEOUT,
+						String.valueOf(HAConstants.DEFAULT_TIMEOUT)),
+				"Default query timeout in seconds (0 means no limit)");
+		DriverPropertyInfo embeddedDirProp = createProperty(HAConstants.CONNECTION_PROPERTY_EMBEDDED_REPLICAS_DIR,
+				effective.getProperty(HAConstants.CONNECTION_PROPERTY_EMBEDDED_REPLICAS_DIR,
+						System.getProperty("java.io.tmpdir")),
+				"Local directory containing downloaded SQLite embedded replicas");
+		DriverPropertyInfo repUrlProp = createProperty(HAConstants.CONNECTION_PROPERTY_REPLICATION_URL,
+				effective.getProperty(HAConstants.CONNECTION_PROPERTY_REPLICATION_URL, ""),
+				"NATS server URL for real-time replica synchronization");
+		DriverPropertyInfo repStreamProp = createProperty(HAConstants.CONNECTION_PROPERTY_REPLICATION_STREAM,
+				effective.getProperty(HAConstants.CONNECTION_PROPERTY_REPLICATION_STREAM,
+						HAConstants.DEFAULT_REPLICATION_STREAM),
+				"NATS JetStream stream name for replication");
+		DriverPropertyInfo repDurableProp = createProperty(HAConstants.CONNECTION_PROPERTY_REPLICATION_DURABLE,
+				effective.getProperty(HAConstants.CONNECTION_PROPERTY_REPLICATION_DURABLE,
+						hostname != null ? hostname : ""),
+				"Unique NATS durable consumer name for this replica node");
+
+		return new DriverPropertyInfo[] { passwordProp, disableSslProp, timeoutProp, embeddedDirProp, repUrlProp,
+				repStreamProp, repDurableProp };
+	}
+
+	private static DriverPropertyInfo createProperty(String name, String value, String description) {
+		DriverPropertyInfo dpi = new DriverPropertyInfo(name, value);
+		dpi.description = description;
+		dpi.required = false;
+		return dpi;
 	}
 
 	@Override
@@ -136,7 +209,7 @@ public class HADriver implements Driver {
 
 	@Override
 	public boolean jdbcCompliant() {
-		return true;
+		return false;
 	}
 
 	@Override

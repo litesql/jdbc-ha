@@ -26,7 +26,7 @@ Add the dependency to your `pom.xml`:
     <dependency>
         <groupId>io.github.litesql</groupId>
         <artifactId>jdbc-ha</artifactId>
-        <version>1.2.2</version>
+        <version>1.3.0</version>
     </dependency>
 </dependencies>
 
@@ -34,7 +34,7 @@ Add the dependency to your `pom.xml`:
     <repository>
         <name>Buf Maven Repository</name>
         <id>buf</id>
-        <url>https://maven.buf.build</url>
+        <url>https://buf.build/gen/maven</url>
     </repository>
 </repositories>
 ```
@@ -52,7 +52,7 @@ repositories {
     mavenCentral()
     maven {
         name = "buf"
-        url = "https://maven.buf.build"
+        url = "https://buf.build/gen/maven"
     }
 }
 ```

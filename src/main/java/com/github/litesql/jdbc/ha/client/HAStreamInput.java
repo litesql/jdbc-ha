@@ -19,28 +19,80 @@ package com.github.litesql.jdbc.ha.client;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 
 public class HAStreamInput {
-	private InputStream stream;
-	private long length;
+	private final InputStream stream;
+	private final long length;
+	private final Charset textCharset;
+	private byte[] cachedBytes;
+	private boolean loaded;
 
 	public HAStreamInput(InputStream stream, long length) {
+		this(stream, length, null);
+	}
+
+	public HAStreamInput(InputStream stream, long length, Charset textCharset) {
 		this.stream = stream;
 		this.length = length;
+		this.textCharset = textCharset;
+	}
+
+	public boolean isText() {
+		return textCharset != null;
+	}
+
+	public synchronized byte[] readBytes() throws IOException {
+		if (loaded) {
+			return cachedBytes;
+		}
+		if (stream == null) {
+			loaded = true;
+			cachedBytes = null;
+			return null;
+		}
+		ByteArrayOutputStream result = new ByteArrayOutputStream();
+		byte[] buffer = new byte[4096];
+		if (length >= 0) {
+			long remaining = length;
+			while (remaining > 0) {
+				int toRead = (int) Math.min(buffer.length, remaining);
+				int read = stream.read(buffer, 0, toRead);
+				if (read == -1) {
+					break;
+				}
+				result.write(buffer, 0, read);
+				remaining -= read;
+			}
+		} else {
+			int read;
+			while ((read = stream.read(buffer)) != -1) {
+				result.write(buffer, 0, read);
+			}
+		}
+		cachedBytes = result.toByteArray();
+		loaded = true;
+		return cachedBytes;
+	}
+
+	public String readString() throws IOException {
+		byte[] bytes = readBytes();
+		if (bytes == null) {
+			return null;
+		}
+		Charset cs = textCharset != null ? textCharset : StandardCharsets.UTF_8;
+		return new String(bytes, cs);
 	}
 
 	@Override
 	public String toString() {
 		try {
-			ByteArrayOutputStream result = new ByteArrayOutputStream();
-			byte[] buffer = new byte[1024];
-			for (int length; (length = stream.read(buffer)) != -1;) {
-				result.write(buffer, 0, length);
-			}
-			return result.toString(StandardCharsets.UTF_8);
+			String s = readString();
+			return s == null ? "" : s;
 		} catch (IOException e) {
-			return e.getMessage();
+			throw new UncheckedIOException(e);
 		}
 	}
 

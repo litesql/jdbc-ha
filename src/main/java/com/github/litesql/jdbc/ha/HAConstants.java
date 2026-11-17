@@ -4,14 +4,17 @@ import java.util.regex.Pattern;
 
 public class HAConstants {
 
-	public static final String CONNECTION_URL_EXAMPLES = "jdbc:litesql:ha:<server-url>, litesql://<server-url>, https://<server-url>";
-	public static final Pattern CONNECTION_URL_PATTERN = Pattern.compile("(jdbc:litesql:ha:|litesql://|https://)(.+)");
+	public static final String CONNECTION_URL_EXAMPLES = "jdbc:litesql:ha:<server-url>, litesql://<server-url>, litesqls://<server-url>, https://<server-url>";
+	public static final Pattern CONNECTION_URL_PATTERN = Pattern
+			.compile("(jdbc:litesql:ha:|litesqls?://|https://)(.+)");
 
 	public static final int DEFAULT_TIMEOUT = 60;
+	public static final int DEFAULT_LOGIN_TIMEOUT = 30;
+	public static final String DEFAULT_REPLICATION_STREAM = "ha_replication";
 
 	public static final int DRIVER_VERSION_MAJOR = 1;
-	public static final int DRIVER_VERSION_MINOR = 2;
-	public static final int DRIVER_VERSION_MICRO = 2;
+	public static final int DRIVER_VERSION_MINOR = 3;
+	public static final int DRIVER_VERSION_MICRO = 0;
 
 	public static final String DRIVER_NAME = "LiteSQL HA";
 	public static final String DRIVER_INFO = "LiteSQL HA JDBC driver";

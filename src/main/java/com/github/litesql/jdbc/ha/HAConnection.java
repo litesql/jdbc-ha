@@ -8,6 +8,7 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Map;
+import java.util.Objects;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -32,15 +33,15 @@ public class HAConnection extends AbstractJdbcConnection {
 	private HAEmbeddedReplicasManager.ReplicaConn embeddedReplicaManager;
 	private Connection embeddedReplica;
 
-	private boolean closed;
-
+	private volatile boolean closed;
 	private boolean autoCommit;
+	private boolean readOnlyState;
 
 	private HADatabaseMetaData databaseMetaData;
 
-	private int queryTimeout;
+	private final int queryTimeout;
 
-	private Logger logger = Logger.getLogger("com.github.litesql.jdbc.driver.ha");
+	private final Logger logger = Logger.getLogger("com.github.litesql.jdbc.driver.ha");
 
 	public HAConnection(@NotNull HADriver driver, @NotNull String url, int queryTimeout,
 			@NotNull Map<String, Object> driverProperties) throws SQLException {
@@ -48,54 +49,91 @@ public class HAConnection extends AbstractJdbcConnection {
 		this.url = url;
 		this.driverProperties = driverProperties;
 		this.autoCommit = true;
+		this.readOnlyState = false;
 		this.queryTimeout = queryTimeout;
 		this.closed = false;
 
 		try {
-			String token = CommonUtils.toString(driverProperties.get("password"), null);
-			boolean disableSSL = "true".equals(driverProperties.get(HAConstants.CONNECTION_PROPERTY_DISABLE_SSL));
+			String token = CommonUtils.toString(driverProperties.get(HAConstants.CONNECTION_PROPERTY_PASSWORD), null);
+			boolean disableSSL = CommonUtils
+					.toBoolean(driverProperties.get(HAConstants.CONNECTION_PROPERTY_DISABLE_SSL));
 			this.client = new HAClient(new URL(url), token, disableSSL);
-			this.embeddedReplicaManager = HAEmbeddedReplicasManager.getReplica(client.getReplicationID());
-			if (this.embeddedReplicaManager != null) {
-				this.embeddedReplica = this.embeddedReplicaManager.createConn();
-			}
+			refreshEmbeddedReplica(this.client.getReplicationID());
 		} catch (IOException e) {
-			throw new SQLException(e);
+			throw new HAException("Failed to initialize HA connection", e);
+		}
+	}
+
+	private void refreshEmbeddedReplica(String replicationId) throws SQLException {
+		if (this.embeddedReplica != null) {
+			try {
+				this.embeddedReplica.close();
+			} catch (SQLException ignored) {
+			}
+			this.embeddedReplica = null;
+		}
+		this.embeddedReplicaManager = HAEmbeddedReplicasManager.getReplica(replicationId);
+		if (this.embeddedReplicaManager != null) {
+			this.embeddedReplica = this.embeddedReplicaManager.createConn();
+		}
+	}
+
+	void checkClosed() throws SQLException {
+		if (this.closed) {
+			throw new HAException("Connection is closed");
 		}
 	}
 
 	@Override
 	public void commit() throws SQLException {
+		checkClosed();
+		if (this.autoCommit) {
+			throw new HAException("Cannot commit when autoCommit is enabled");
+		}
 		getClient().executeUpdate("COMMIT", null, this.queryTimeout);
+		getClient().executeUpdate("BEGIN", null, this.queryTimeout);
 	}
 
 	@Override
 	public boolean getAutoCommit() throws SQLException {
+		checkClosed();
 		return this.autoCommit;
 	}
 
 	@Override
 	public boolean isValid(int timeout) throws SQLException {
+		if (timeout < 0) {
+			throw new HAException("Timeout must not be negative: " + timeout);
+		}
+		if (this.closed) {
+			return false;
+		}
 		try {
-			getClient().executeQuery("SELECT 1", null, timeout);
+			getClient().executeQuery("SELECT 1", null, timeout > 0 ? timeout : 5);
+			return true;
 		} catch (Exception e) {
 			return false;
 		}
-		return true;
 	}
 
 	@Override
 	public void rollback() throws SQLException {
+		checkClosed();
+		if (this.autoCommit) {
+			throw new HAException("Cannot rollback when autoCommit is enabled");
+		}
 		getClient().executeUpdate("ROLLBACK", null, this.queryTimeout);
+		getClient().executeUpdate("BEGIN", null, this.queryTimeout);
 	}
 
 	@Override
 	public void setAutoCommit(boolean autoCommit) throws SQLException {
+		checkClosed();
 		if (autoCommit == this.autoCommit) {
 			return;
 		}
 		if (autoCommit) {
-			this.commit();
+			getClient().executeUpdate("COMMIT", null, this.queryTimeout);
 		} else {
 			getClient().executeUpdate("BEGIN", null, this.queryTimeout);
 		}
@@ -103,31 +141,52 @@ public class HAConnection extends AbstractJdbcConnection {
 	}
 
 	@Override
+	public void beginRequest() throws SQLException {
+		checkClosed();
+	}
+
+	@Override
 	public void endRequest() throws SQLException {
-		if (!this.autoCommit) {
-			this.autoCommit = true;
-			getClient().executeUpdate("COMMIT", null, this.queryTimeout);
+		if (this.closed) {
+			return;
 		}
-		try {
-			getClient().executeUpdate("PRAGMA query_only = 0", null, this.queryTimeout);
-		} catch (Exception e) {
-			logger.log(Level.SEVERE, "Could not set PRAGMA query_only", e);
+		if (!this.autoCommit) {
+			try {
+				getClient().executeUpdate("ROLLBACK", null, this.queryTimeout);
+			} finally {
+				this.autoCommit = true;
+			}
+		}
+		if (this.readOnlyState) {
+			try {
+				getClient().executeUpdate("PRAGMA query_only = 0", null, this.queryTimeout);
+				this.readOnlyState = false;
+			} catch (Exception e) {
+				logger.log(Level.SEVERE, "Could not reset PRAGMA query_only", e);
+			}
 		}
 	}
 
 	@Override
 	public boolean isReadOnly() throws SQLException {
+		checkClosed();
 		HAExecutionResult result = getClient().executeQuery("PRAGMA query_only", null, this.queryTimeout);
-		return result.getRows().get(0)[0].equals(1);
+		if (result.getRows().isEmpty() || result.getRows().get(0).length == 0) {
+			return this.readOnlyState;
+		}
+		Object val = result.getRows().get(0)[0];
+		return CommonUtils.toInt(val) != 0 || Boolean.TRUE.equals(val);
 	}
 
 	@Override
 	public void setReadOnly(boolean readOnly) throws SQLException {
+		checkClosed();
 		if (readOnly) {
 			getClient().executeUpdate("PRAGMA query_only = 1", null, this.queryTimeout);
 		} else {
 			getClient().executeUpdate("PRAGMA query_only = 0", null, this.queryTimeout);
 		}
+		this.readOnlyState = readOnly;
 	}
 
 	/**
@@ -141,11 +200,17 @@ public class HAConnection extends AbstractJdbcConnection {
 		return this.embeddedReplica;
 	}
 
+	protected boolean canUseEmbeddedReplica() {
+		if (!this.autoCommit || this.embeddedReplica == null || this.embeddedReplicaManager == null) {
+			return false;
+		}
+		return this.embeddedReplicaManager.txseq >= getClient().getTxseq();
+	}
+
 	protected boolean isReplicaUpdated() {
 		if (this.embeddedReplicaManager == null) {
 			return false;
 		}
-
 		return this.embeddedReplicaManager.txseq >= getClient().getTxseq();
 	}
 
@@ -167,27 +232,63 @@ public class HAConnection extends AbstractJdbcConnection {
 	@Override
 	public Statement createStatement(int resultSetType, int resultSetConcurrency, int resultSetHoldability)
 			throws SQLException {
+		checkClosed();
 		return new HAStatement(this, this.queryTimeout);
 	}
 
 	@Override
 	public PreparedStatement prepareStatement(String sql, int resultSetType, int resultSetConcurrency,
 			int resultSetHoldability) throws SQLException {
+		checkClosed();
+		return prepareStatementImpl(sql);
+	}
+
+	@Override
+	public PreparedStatement prepareStatement(String sql, int autoGeneratedKeys) throws SQLException {
+		checkClosed();
+		return prepareStatementImpl(sql);
+	}
+
+	@Override
+	public PreparedStatement prepareStatement(String sql, int[] columnIndexes) throws SQLException {
+		checkClosed();
+		return prepareStatementImpl(sql);
+	}
+
+	@Override
+	public PreparedStatement prepareStatement(String sql, String[] columnNames) throws SQLException {
+		checkClosed();
 		return prepareStatementImpl(sql);
 	}
 
 	@NotNull
 	private HAPreparedStatement prepareStatementImpl(String sql) throws SQLException {
+		if (sql == null) {
+			throw new HAException("SQL statement must not be null");
+		}
 		return new HAPreparedStatement(this, sql, this.queryTimeout);
 	}
 
 	@Override
-	public void close() throws SQLException {
-		client.close();
-		if (embeddedReplica != null) {
-			embeddedReplica.close();
+	public synchronized void close() throws SQLException {
+		if (this.closed) {
+			return;
 		}
 		this.closed = true;
+		SQLException replicaErr = null;
+		if (embeddedReplica != null) {
+			try {
+				embeddedReplica.close();
+			} catch (SQLException e) {
+				replicaErr = e;
+			} finally {
+				embeddedReplica = null;
+			}
+		}
+		client.close();
+		if (replicaErr != null) {
+			throw replicaErr;
+		}
 	}
 
 	@Override
@@ -197,6 +298,7 @@ public class HAConnection extends AbstractJdbcConnection {
 
 	@Override
 	public DatabaseMetaData getMetaData() throws SQLException {
+		checkClosed();
 		if (databaseMetaData == null) {
 			databaseMetaData = new HADatabaseMetaData(this);
 		}
@@ -205,29 +307,26 @@ public class HAConnection extends AbstractJdbcConnection {
 
 	@Override
 	public void setCatalog(String catalog) throws SQLException {
-		if (catalog.isEmpty()) {
-			throw new SQLException("catalog is empty");
+		checkClosed();
+		if (catalog == null || catalog.isEmpty()) {
+			return;
 		}
-		getClient().setReplicationID(catalog);
-		if (this.embeddedReplica != null) {
-			this.embeddedReplica.close();
+		setCatalogInternal(catalog);
+	}
+
+	void setCatalogInternal(String catalog) throws SQLException {
+		String normalized = catalog != null ? catalog : "";
+		if (Objects.equals(normalized, getClient().getReplicationID())) {
+			return;
 		}
-		this.embeddedReplicaManager = null;
-		this.embeddedReplica = null;
-		this.embeddedReplicaManager = HAEmbeddedReplicasManager.getReplica(getClient().getReplicationID());
-		if (this.embeddedReplicaManager != null) {
-			this.embeddedReplica = this.embeddedReplicaManager.createConn();
-		}
+		getClient().setReplicationID(normalized);
+		refreshEmbeddedReplica(normalized);
 	}
 
 	@Override
 	public String getCatalog() throws SQLException {
+		checkClosed();
 		return getClient().getReplicationID();
-	}
-
-	@Override
-	public void beginRequest() throws SQLException {
-		getClient().executeUpdate("BEGIN", null, this.queryTimeout);
 	}
 
 }

@@ -18,28 +18,59 @@ package com.github.litesql.jdbc.ha.client;
 
 import java.io.IOException;
 import java.io.Reader;
-
-import org.jkiss.utils.IOUtils;
+import java.io.UncheckedIOException;
 
 public class HAReaderInput {
-	private Reader stream;
-	private long length;
+	private final Reader stream;
+	private final long length;
+	private String cachedValue;
+	private boolean loaded;
 
 	public HAReaderInput(Reader stream, long length) {
 		this.stream = stream;
 		this.length = length;
 	}
 
+	public synchronized String readString() throws IOException {
+		if (loaded) {
+			return cachedValue;
+		}
+		if (stream == null) {
+			loaded = true;
+			cachedValue = null;
+			return null;
+		}
+		StringBuilder sb = new StringBuilder();
+		char[] buffer = new char[4096];
+		if (length >= 0) {
+			long remaining = length;
+			while (remaining > 0) {
+				int toRead = (int) Math.min(buffer.length, remaining);
+				int read = stream.read(buffer, 0, toRead);
+				if (read == -1) {
+					break;
+				}
+				sb.append(buffer, 0, read);
+				remaining -= read;
+			}
+		} else {
+			int read;
+			while ((read = stream.read(buffer)) != -1) {
+				sb.append(buffer, 0, read);
+			}
+		}
+		cachedValue = sb.toString();
+		loaded = true;
+		return cachedValue;
+	}
+
 	@Override
 	public String toString() {
 		try {
-			String str = IOUtils.readToString(stream);
-			if (length <= 0) {
-				return str;
-			}
-			return str.substring(0, (int) length);
+			String s = readString();
+			return s == null ? "" : s;
 		} catch (IOException e) {
-			return e.getMessage();
+			throw new UncheckedIOException(e);
 		}
 	}
 }

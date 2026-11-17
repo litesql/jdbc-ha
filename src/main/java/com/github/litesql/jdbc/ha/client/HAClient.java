@@ -1,16 +1,25 @@
 package com.github.litesql.jdbc.ha.client;
 
+import java.io.BufferedOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.sql.SQLException;
+import java.sql.SQLTimeoutException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.TimeoutException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
+import com.github.litesql.jdbc.ha.HAException;
 import com.github.litesql.jdbc.ha.HAUtils;
 import com.google.protobuf.Any;
 import com.google.protobuf.InvalidProtocolBufferException;
@@ -25,6 +34,7 @@ import build.buf.gen.sql.v1.NamedValue;
 import build.buf.gen.sql.v1.QueryRequest;
 import build.buf.gen.sql.v1.QueryResponse;
 import build.buf.gen.sql.v1.QueryType;
+import build.buf.gen.sql.v1.ReplicationIDsRequest;
 import build.buf.gen.sql.v1.ReplicationIDsResponse;
 import build.buf.gen.sql.v1.Row;
 import io.grpc.CallCredentials;
@@ -32,103 +42,114 @@ import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.StatusException;
 import io.grpc.stub.BlockingClientCall;
-import io.grpc.stub.StreamObserver;
 
 /**
  * The entry point to HA Database client API.
  */
-public class HAClient {
+public class HAClient implements AutoCloseable {
 
-	private String replicationID;
+	private static final Logger LOGGER = Logger.getLogger(HAClient.class.getName());
 
-	private final StreamObserver<QueryRequest> requestObserver;
+	private volatile String replicationID;
 
-	private ManagedChannel channel;
-	private DatabaseServiceBlockingV2Stub stub;
-	private CountDownLatch latch;
-	private QueryResponse responseRef;
+	private final ManagedChannel channel;
+	private final DatabaseServiceBlockingV2Stub stub;
+	private BlockingClientCall<QueryRequest, QueryResponse> queryCall;
 
-	private ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
-	private boolean badConn = false;
-
-	private long txseq;
+	private final ScheduledExecutorService executor;
+	private volatile boolean closed = false;
+	private volatile long txseq;
 
 	public HAClient(URL url, String token, boolean disableSSL) {
-		this.replicationID = url.getPath();
-		if (this.replicationID.startsWith("/")) {
-			this.replicationID = this.replicationID.substring(1);
-		}
+		this(buildChannel(url, disableSSL), extractReplicationId(url), token);
+	}
 
-		ManagedChannelBuilder<?> channelBuilder = ManagedChannelBuilder.forAddress(url.getHost(), url.getPort());
-		if (disableSSL || url.getProtocol().equals("http")) {
-			channelBuilder = channelBuilder.usePlaintext();
-		}
-
-		this.channel = channelBuilder.build();
+	public HAClient(ManagedChannel channel, String replicationID, String token) {
+		this.channel = channel;
+		this.replicationID = replicationID != null ? replicationID : "";
 
 		CallCredentials credentials = new Credentials(token);
-
 		this.stub = DatabaseServiceGrpc.newBlockingV2Stub(channel).withCallCredentials(credentials);
+		this.queryCall = this.stub.query();
 
-		DatabaseServiceGrpc.DatabaseServiceStub asyncStub = DatabaseServiceGrpc.newStub(channel)
-				.withCallCredentials(credentials);
+		this.executor = Executors.newSingleThreadScheduledExecutor(r -> {
+			Thread t = new Thread(r, "ha-client-ping");
+			t.setDaemon(true);
+			return t;
+		});
 
-		StreamObserver<QueryResponse> responseObserver = new StreamObserver<QueryResponse>() {
-			@Override
-			public void onNext(QueryResponse response) {
-				responseRef = response;
-
-				if (response.getTxseq() > 0) {
-					txseq = response.getTxseq();
-				}
-				latch.countDown();
+		Runnable pingTask = () -> {
+			if (this.closed) {
+				return;
 			}
-
-			@Override
-			public void onError(Throwable t) {
-				responseRef = QueryResponse.newBuilder().setError(t.getMessage()).build();
-				if (latch != null) {
-					latch.countDown();
-				}
-			}
-
-			@Override
-			public void onCompleted() {
-			}
-		};
-
-		this.requestObserver = asyncStub.query(responseObserver);
-
-		Runnable task = () -> {
 			try {
-				send("SELECT 1", null, QueryType.QUERY_TYPE_PING, 3);
+				send("SELECT 1", null, QueryType.QUERY_TYPE_PING, 5);
 			} catch (SQLException e) {
-				e.printStackTrace();
-				badConn = true;
-				executor.shutdown();
+				if (!this.closed) {
+					LOGGER.log(Level.FINE, "Keepalive ping failed", e);
+				}
 			}
 		};
-		executor.scheduleWithFixedDelay(task, 25, 25, TimeUnit.SECONDS);
+		this.executor.scheduleWithFixedDelay(pingTask, 25, 25, TimeUnit.SECONDS);
+	}
+
+	private static String extractReplicationId(URL url) {
+		String path = url.getPath();
+		if (path == null) {
+			return "";
+		}
+		return path.startsWith("/") ? path.substring(1) : path;
+	}
+
+	private static ManagedChannel buildChannel(URL url, boolean disableSSL) {
+		int port = url.getPort() != -1 ? url.getPort() : url.getDefaultPort();
+		if (port <= 0) {
+			port = "https".equalsIgnoreCase(url.getProtocol()) ? 443 : 80;
+		}
+		ManagedChannelBuilder<?> channelBuilder = ManagedChannelBuilder.forAddress(url.getHost(), port)
+				.keepAliveTime(25, TimeUnit.SECONDS).keepAliveTimeout(10, TimeUnit.SECONDS).keepAliveWithoutCalls(true);
+		if (disableSSL || "http".equalsIgnoreCase(url.getProtocol())) {
+			channelBuilder = channelBuilder.usePlaintext();
+		}
+		return channelBuilder.build();
 	}
 
 	public void downloadCurrentReplica(String dir, String replicationID, boolean override)
 			throws StatusException, InterruptedException {
-		java.nio.file.Path path = java.nio.file.Paths.get(dir, replicationID);
-		if (!override && java.nio.file.Files.exists(path)) {
-			return;
-		}
-
-		BlockingClientCall<?, DownloadResponse> call = this.stub
-				.download(DownloadRequest.newBuilder().setReplicationId(replicationID).build());
-		long offset = 0;
-		while (call.hasNext()) {
-			DownloadResponse response = call.read();
-			offset = HAUtils.writeFileChunk(dir, replicationID, response.getData().toByteArray(), offset);
+		try {
+			Path target = HAUtils.resolveSafePath(dir, replicationID);
+			if (!override && Files.exists(target)) {
+				return;
+			}
+			Path parent = target.getParent();
+			if (parent != null) {
+				Files.createDirectories(parent);
+			}
+			Path tempFile = Files.createTempFile(parent, target.getFileName().toString() + ".", ".part");
+			boolean success = false;
+			BlockingClientCall<?, DownloadResponse> call = this.stub
+					.download(DownloadRequest.newBuilder().setReplicationId(replicationID).build());
+			try (OutputStream out = new BufferedOutputStream(Files.newOutputStream(tempFile))) {
+				while (call.hasNext()) {
+					DownloadResponse response = call.read();
+					response.getData().writeTo(out);
+				}
+				out.flush();
+				success = true;
+			} finally {
+				if (!success) {
+					call.cancel("Download aborted", null);
+					Files.deleteIfExists(tempFile);
+				}
+			}
+			Files.move(tempFile, target, StandardCopyOption.REPLACE_EXISTING);
+		} catch (IOException e) {
+			throw new RuntimeException("Failed to download current replica " + replicationID, e);
 		}
 	}
 
 	public void downloadAllCurrentReplicas(String dir, boolean override) throws StatusException, InterruptedException {
-		ReplicationIDsResponse response = this.stub.replicationIDs(null);
+		ReplicationIDsResponse response = this.stub.replicationIDs(ReplicationIDsRequest.getDefaultInstance());
 		for (int i = 0; i < response.getReplicationIdCount(); i++) {
 			downloadCurrentReplica(dir, response.getReplicationId(i), override);
 		}
@@ -136,90 +157,94 @@ public class HAClient {
 
 	public void downloadLatestSnapshot(String dir, String replicationID, boolean override)
 			throws StatusException, InterruptedException {
-		java.nio.file.Path path = java.nio.file.Paths.get(dir, replicationID);
-		if (!override && java.nio.file.Files.exists(path)) {
-			return;
-		}
-		BlockingClientCall<?, LatestSnapshotResponse> call = this.stub
-				.latestSnapshot(LatestSnapshotRequest.newBuilder().setReplicationId(replicationID).build());
-		long offset = 0;
-		while (call.hasNext()) {
-			LatestSnapshotResponse response = call.read();
-			offset = HAUtils.writeFileChunk(dir, replicationID, response.getData().toByteArray(), offset);
+		try {
+			Path target = HAUtils.resolveSafePath(dir, replicationID);
+			if (!override && Files.exists(target)) {
+				return;
+			}
+			Path parent = target.getParent();
+			if (parent != null) {
+				Files.createDirectories(parent);
+			}
+			Path tempFile = Files.createTempFile(parent, target.getFileName().toString() + ".", ".part");
+			boolean success = false;
+			BlockingClientCall<?, LatestSnapshotResponse> call = this.stub
+					.latestSnapshot(LatestSnapshotRequest.newBuilder().setReplicationId(replicationID).build());
+			try (OutputStream out = new BufferedOutputStream(Files.newOutputStream(tempFile))) {
+				while (call.hasNext()) {
+					LatestSnapshotResponse response = call.read();
+					response.getData().writeTo(out);
+				}
+				out.flush();
+				success = true;
+			} finally {
+				if (!success) {
+					call.cancel("Snapshot download aborted", null);
+					Files.deleteIfExists(tempFile);
+				}
+			}
+			Files.move(tempFile, target, StandardCopyOption.REPLACE_EXISTING);
+		} catch (IOException e) {
+			throw new RuntimeException("Failed to download latest snapshot " + replicationID, e);
 		}
 	}
 
 	public void downloadAllLatestSnapshots(String dir, boolean override) throws StatusException, InterruptedException {
-		this.stub.download(DownloadRequest.newBuilder().setReplicationId(replicationID).build());
-		ReplicationIDsResponse response = this.stub.replicationIDs(null);
+		ReplicationIDsResponse response = this.stub.replicationIDs(ReplicationIDsRequest.getDefaultInstance());
 		for (int i = 0; i < response.getReplicationIdCount(); i++) {
 			downloadLatestSnapshot(dir, response.getReplicationId(i), override);
 		}
 	}
 
-	public List<String> getReplicationIDs() throws Exception {
-		ReplicationIDsResponse response = this.stub.replicationIDs(null);
-		List<String> ids = new ArrayList<>();
-		for (int i = 0; i < response.getReplicationIdCount(); i++) {
-			ids.add(response.getReplicationId(i));
-		}
-
-		return ids;
+	public List<String> getReplicationIDs() throws StatusException {
+		ReplicationIDsResponse response = this.stub.replicationIDs(ReplicationIDsRequest.getDefaultInstance());
+		return new ArrayList<>(response.getReplicationIdList());
 	}
 
-	public HAExecutionResult getReplicationIDsResultSet() throws Exception {
-		ReplicationIDsResponse response = this.stub.replicationIDs(null);
-		List<Object[]> rows = new ArrayList<>();
+	public HAExecutionResult getReplicationIDsResultSet() throws StatusException {
+		ReplicationIDsResponse response = this.stub.replicationIDs(ReplicationIDsRequest.getDefaultInstance());
+		List<Object[]> rows = new ArrayList<>(response.getReplicationIdCount());
 		for (int i = 0; i < response.getReplicationIdCount(); i++) {
-			Object[] row = new Object[1];
-			row[0] = response.getReplicationId(i);
-			rows.add(row);
+			rows.add(new Object[] { response.getReplicationId(i) });
 		}
 
-		List<String> columns = new ArrayList<>();
+		List<String> columns = new ArrayList<>(1);
 		columns.add("TABLE_CAT");
 
 		return new HAExecutionResult(columns, rows);
 	}
 
 	/**
-	 * Execute a single SQL statement.
-	 *
-	 * @return The result set.
+	 * Execute a single SQL query returning a result set.
 	 */
 	public HAExecutionResult executeQuery(String stmt, Map<Object, Object> parameters, int timeout)
 			throws SQLException {
 		QueryResponse response = send(stmt, parameters, QueryType.QUERY_TYPE_EXEC_QUERY, timeout);
-
-		List<String> columns = new ArrayList<String>(response.getResultSet().getColumnsList());
-		List<Object[]> rows = new ArrayList<Object[]>();
-		try {
-			for (Row rowAny : response.getResultSet().getRowsList()) {
-				Object[] row = new Object[rowAny.getValuesCount()];
-				for (int i = 0; i < rowAny.getValuesCount(); i++) {
-					row[i] = Converter.fromAny(rowAny.getValues(i));
-				}
-				rows.add(row);
-			}
-		} catch (InvalidProtocolBufferException e) {
-			throw new SQLException(e);
-		}
-		return new HAExecutionResult(columns, rows);
+		return parseResultSet(response);
 	}
 
 	public int executeUpdate(String stmt, Map<Object, Object> parameters, int timeout) throws SQLException {
+		return (int) executeUpdateWithResult(stmt, parameters, timeout).getRowsAffected();
+	}
+
+	public HAExecutionResult executeUpdateWithResult(String stmt, Map<Object, Object> parameters, int timeout)
+			throws SQLException {
 		QueryResponse response = send(stmt, parameters, QueryType.QUERY_TYPE_EXEC_UPDATE, timeout);
-		return (int) response.getRowsAffected();
+		return new HAExecutionResult(response.getRowsAffected(), response.getLastInsertId());
 	}
 
 	public HAExecutionResult execute(String stmt, Map<Object, Object> parameters, int timeout) throws SQLException {
 		QueryResponse response = send(stmt, parameters, QueryType.QUERY_TYPE_UNSPECIFIED, timeout);
 
-		if (response.getResultSet() == null || response.getResultSet().getColumnsCount() == 0) {
-			return new HAExecutionResult(response.getRowsAffected());
+		if (!response.hasResultSet() || response.getResultSet().getColumnsCount() == 0) {
+			return new HAExecutionResult(response.getRowsAffected(), response.getLastInsertId());
 		}
-		List<String> columns = new ArrayList<String>(response.getResultSet().getColumnsList());
-		List<Object[]> rows = new ArrayList<Object[]>();
+		return parseResultSet(response);
+	}
+
+	private HAExecutionResult parseResultSet(QueryResponse response) throws SQLException {
+		List<String> columns = new ArrayList<>(response.getResultSet().getColumnsList());
+		List<Object[]> rows = new ArrayList<>(response.getResultSet().getRowsCount());
 		try {
 			for (Row rowAny : response.getResultSet().getRowsList()) {
 				Object[] row = new Object[rowAny.getValuesCount()];
@@ -229,50 +254,91 @@ public class HAClient {
 				rows.add(row);
 			}
 		} catch (InvalidProtocolBufferException e) {
-			throw new SQLException(e);
+			throw new HAException("Failed to decode result set row", e);
 		}
 		return new HAExecutionResult(columns, rows);
 	}
 
 	private synchronized QueryResponse send(String sql, Map<Object, Object> parameters, QueryType type, int timeout)
 			throws SQLException {
-		if (this.badConn) {
-			throw new SQLException("bad connection");
+		if (this.closed) {
+			throw new HAException("Connection is closed");
 		}
-		this.latch = new CountDownLatch(1);
-		QueryRequest.Builder builder = QueryRequest.newBuilder().setReplicationId(this.replicationID).setSql(sql)
-				.setType(type);
+		if (this.queryCall == null) {
+			this.queryCall = this.stub.query();
+		}
+
+		String repId = this.replicationID != null ? this.replicationID : "";
+		QueryRequest.Builder builder = QueryRequest.newBuilder().setReplicationId(repId)
+				.setSql(sql != null ? sql : "").setType(type);
 
 		if (parameters != null && !parameters.isEmpty()) {
-			boolean indexParameters = isIndexedParams(parameters);
-			List<NamedValue> namedValues = new ArrayList<>();
-			AtomicInteger counter = new AtomicInteger(1);
-			parameters.forEach((key, value) -> {
-				NamedValue.Builder namedValueBuilder = NamedValue.newBuilder();
-				Any anyValue = Converter.toAny(value);
-				if (indexParameters) {
-					namedValueBuilder.setOrdinal(((Number) key).longValue()).setValue(anyValue).build();
+			List<NamedValue> namedValues = new ArrayList<>(parameters.size());
+			long counter = 1L;
+			for (Map.Entry<Object, Object> entry : parameters.entrySet()) {
+				Object key = entry.getKey();
+				Any anyValue = Converter.toAny(entry.getValue());
+				NamedValue.Builder nvBuilder = NamedValue.newBuilder().setValue(anyValue);
+				if (key instanceof Number) {
+					nvBuilder.setOrdinal(((Number) key).longValue());
 				} else {
-					namedValueBuilder.setName(String.valueOf(key)).setOrdinal(counter.longValue()).setValue(anyValue)
-							.build();
+					String name = String.valueOf(key);
+					if (name.startsWith(":") || name.startsWith("@") || name.startsWith("$")) {
+						name = name.substring(1);
+					}
+					nvBuilder.setName(name).setOrdinal(counter);
 				}
-				counter.incrementAndGet();
-				namedValues.add(namedValueBuilder.build());
-			});
+				counter++;
+				namedValues.add(nvBuilder.build());
+			}
 			builder.addAllParams(namedValues);
 		}
 
-		this.requestObserver.onNext(builder.build());
+		QueryRequest request = builder.build();
+		QueryResponse response;
 		try {
-			this.latch.await(timeout, TimeUnit.SECONDS); // Wait for onNext
+			if (timeout > 0) {
+				this.queryCall.write(request, timeout, TimeUnit.SECONDS);
+				response = this.queryCall.read(timeout, TimeUnit.SECONDS);
+			} else {
+				this.queryCall.write(request);
+				response = this.queryCall.read();
+			}
+		} catch (TimeoutException e) {
+			resetQueryCall("Query timed out", e);
+			throw new SQLTimeoutException("Query timed out after " + timeout + " seconds", e);
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-		}
-		if (!responseRef.getError().isEmpty()) {
-			throw new SQLException(responseRef.getError());
+			resetQueryCall("Query interrupted", e);
+			throw new HAException("Query interrupted", e);
+		} catch (StatusException e) {
+			resetQueryCall("gRPC stream failed", e);
+			throw new HAException("gRPC error: " + e.getMessage(), e);
 		}
 
-		return responseRef;
+		if (response == null) {
+			resetQueryCall("Stream closed by server", null);
+			throw new HAException("Query stream closed unexpectedly by server");
+		}
+
+		if (response.getTxseq() > 0) {
+			this.txseq = response.getTxseq();
+		}
+		if (!response.getError().isEmpty()) {
+			throw new HAException(response.getError());
+		}
+
+		return response;
+	}
+
+	private void resetQueryCall(String reason, Throwable cause) {
+		if (this.queryCall != null) {
+			try {
+				this.queryCall.cancel(reason, cause);
+			} catch (Exception ignored) {
+			}
+			this.queryCall = null;
+		}
 	}
 
 	public String getReplicationID() {
@@ -280,24 +346,36 @@ public class HAClient {
 	}
 
 	public void setReplicationID(String replicationID) {
-		this.replicationID = replicationID;
+		this.replicationID = replicationID != null ? replicationID : "";
 	}
 
 	public long getTxseq() {
 		return txseq;
 	}
 
-	private boolean isIndexedParams(Map<Object, Object> parameter) {
-		if (!parameter.isEmpty()) {
-			return parameter.keySet().iterator().next() instanceof Integer;
-		}
-		return false;
-	}
-
+	@Override
 	public void close() {
-		this.requestObserver.onCompleted();
-		if (this.channel != null) {
+		this.closed = true;
+		this.executor.shutdownNow();
+		synchronized (this) {
+			if (this.queryCall != null) {
+				try {
+					this.queryCall.halfClose();
+				} catch (Exception ignored) {
+				}
+				this.queryCall = null;
+			}
+		}
+		if (this.channel != null && !this.channel.isShutdown()) {
 			this.channel.shutdown();
+			try {
+				if (!this.channel.awaitTermination(2, TimeUnit.SECONDS)) {
+					this.channel.shutdownNow();
+				}
+			} catch (InterruptedException e) {
+				this.channel.shutdownNow();
+				Thread.currentThread().interrupt();
+			}
 		}
 	}
 
