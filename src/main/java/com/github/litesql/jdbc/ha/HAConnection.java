@@ -1,7 +1,5 @@
 package com.github.litesql.jdbc.ha;
 
-import java.io.IOException;
-import java.net.URL;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
@@ -57,10 +55,13 @@ public class HAConnection extends AbstractJdbcConnection {
 			String token = CommonUtils.toString(driverProperties.get(HAConstants.CONNECTION_PROPERTY_PASSWORD), null);
 			boolean disableSSL = CommonUtils
 					.toBoolean(driverProperties.get(HAConstants.CONNECTION_PROPERTY_DISABLE_SSL));
-			this.client = new HAClient(new URL(url), token, disableSSL);
+			String lbPolicy = CommonUtils.toString(
+					driverProperties.get(HAConstants.CONNECTION_PROPERTY_LOAD_BALANCER_POLICY),
+					HAConstants.DEFAULT_LOAD_BALANCER_POLICY);
+			this.client = new HAClient(url, token, disableSSL, lbPolicy);
 			refreshEmbeddedReplica(this.client.getReplicationID());
-		} catch (IOException e) {
-			throw new HAException("Failed to initialize HA connection", e);
+		} catch (IllegalArgumentException e) {
+			throw new HAException("Failed to initialize HA connection: " + e.getMessage(), e);
 		}
 	}
 
@@ -90,8 +91,13 @@ public class HAConnection extends AbstractJdbcConnection {
 		if (this.autoCommit) {
 			throw new HAException("Cannot commit when autoCommit is enabled");
 		}
+		if (!getClient().hasActiveStreamTransaction()) {
+			throw new HAException("Transaction was aborted due to server stream disconnection");
+		}
 		getClient().executeUpdate("COMMIT", null, this.queryTimeout);
+		getClient().markStreamTransactionEnded();
 		getClient().executeUpdate("BEGIN", null, this.queryTimeout);
+		getClient().markStreamTransactionStarted();
 	}
 
 	@Override
@@ -122,8 +128,12 @@ public class HAConnection extends AbstractJdbcConnection {
 		if (this.autoCommit) {
 			throw new HAException("Cannot rollback when autoCommit is enabled");
 		}
-		getClient().executeUpdate("ROLLBACK", null, this.queryTimeout);
+		if (getClient().hasActiveStreamTransaction()) {
+			getClient().executeUpdate("ROLLBACK", null, this.queryTimeout);
+			getClient().markStreamTransactionEnded();
+		}
 		getClient().executeUpdate("BEGIN", null, this.queryTimeout);
+		getClient().markStreamTransactionStarted();
 	}
 
 	@Override
@@ -133,11 +143,21 @@ public class HAConnection extends AbstractJdbcConnection {
 			return;
 		}
 		if (autoCommit) {
-			getClient().executeUpdate("COMMIT", null, this.queryTimeout);
+			try {
+				if (getClient().hasActiveStreamTransaction()) {
+					getClient().executeUpdate("COMMIT", null, this.queryTimeout);
+				}
+			} finally {
+				getClient().markStreamTransactionEnded();
+				getClient().setInTransaction(false);
+				this.autoCommit = true;
+			}
 		} else {
 			getClient().executeUpdate("BEGIN", null, this.queryTimeout);
+			getClient().setInTransaction(true);
+			getClient().markStreamTransactionStarted();
+			this.autoCommit = false;
 		}
-		this.autoCommit = autoCommit;
 	}
 
 	@Override
@@ -152,13 +172,18 @@ public class HAConnection extends AbstractJdbcConnection {
 		}
 		if (!this.autoCommit) {
 			try {
-				getClient().executeUpdate("ROLLBACK", null, this.queryTimeout);
+				if (getClient().hasActiveStreamTransaction()) {
+					getClient().executeUpdate("ROLLBACK", null, this.queryTimeout);
+				}
 			} finally {
+				getClient().markStreamTransactionEnded();
+				getClient().setInTransaction(false);
 				this.autoCommit = true;
 			}
 		}
 		if (this.readOnlyState) {
 			try {
+				getClient().setReadOnlySession(false);
 				getClient().executeUpdate("PRAGMA query_only = 0", null, this.queryTimeout);
 				this.readOnlyState = false;
 			} catch (Exception e) {
@@ -183,10 +208,18 @@ public class HAConnection extends AbstractJdbcConnection {
 		checkClosed();
 		if (readOnly) {
 			getClient().executeUpdate("PRAGMA query_only = 1", null, this.queryTimeout);
+			this.readOnlyState = true;
+			getClient().setReadOnlySession(true);
 		} else {
-			getClient().executeUpdate("PRAGMA query_only = 0", null, this.queryTimeout);
+			getClient().setReadOnlySession(false);
+			try {
+				getClient().executeUpdate("PRAGMA query_only = 0", null, this.queryTimeout);
+				this.readOnlyState = false;
+			} catch (SQLException e) {
+				getClient().setReadOnlySession(this.readOnlyState);
+				throw e;
+			}
 		}
-		this.readOnlyState = readOnly;
 	}
 
 	/**

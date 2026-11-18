@@ -11,7 +11,9 @@ import java.sql.SQLException;
 import java.sql.SQLTimeoutException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -19,6 +21,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import com.github.litesql.jdbc.ha.HAConstants;
 import com.github.litesql.jdbc.ha.HAException;
 import com.github.litesql.jdbc.ha.HAUtils;
 import com.google.protobuf.Any;
@@ -39,7 +42,7 @@ import build.buf.gen.sql.v1.ReplicationIDsResponse;
 import build.buf.gen.sql.v1.Row;
 import io.grpc.CallCredentials;
 import io.grpc.ManagedChannel;
-import io.grpc.ManagedChannelBuilder;
+import io.grpc.Status;
 import io.grpc.StatusException;
 import io.grpc.stub.BlockingClientCall;
 
@@ -53,6 +56,7 @@ public class HAClient implements AutoCloseable {
 	private volatile String replicationID;
 
 	private final ManagedChannel channel;
+	private final HAChannelManager.Lease channelLease;
 	private final DatabaseServiceBlockingV2Stub stub;
 	private BlockingClientCall<QueryRequest, QueryResponse> queryCall;
 
@@ -60,17 +64,64 @@ public class HAClient implements AutoCloseable {
 	private volatile boolean closed = false;
 	private volatile long txseq;
 
+	private volatile boolean inTransaction = false;
+	private volatile boolean streamHasTransaction = false;
+	private volatile boolean readOnlySession = false;
+
 	public HAClient(URL url, String token, boolean disableSSL) {
-		this(buildChannel(url, disableSSL), extractReplicationId(url), token);
+		this(url != null ? url.toString() : null, token, disableSSL, null);
+	}
+
+	public HAClient(URL url, String token, boolean disableSSL, String loadBalancerPolicy) {
+		this(url != null ? url.toString() : null, token, disableSSL, loadBalancerPolicy);
+	}
+
+	public HAClient(String url, String token, boolean disableSSL) {
+		this(url, token, disableSSL, null);
+	}
+
+	public HAClient(String url, String token, boolean disableSSL, String loadBalancerPolicy) {
+		this(initFromUrl(url, disableSSL, loadBalancerPolicy), token);
 	}
 
 	public HAClient(ManagedChannel channel, String replicationID, String token) {
+		this(null, Objects.requireNonNull(channel, "channel"), replicationID, token);
+	}
+
+	private static final class UrlChannelInit {
+		final HAChannelManager.Lease lease;
+		final String replicationId;
+
+		UrlChannelInit(HAChannelManager.Lease lease, String replicationId) {
+			this.lease = lease;
+			this.replicationId = replicationId;
+		}
+	}
+
+	private static UrlChannelInit initFromUrl(String url, boolean disableSSL, String loadBalancerPolicy) {
+		HAConnectionUrl parsed = HAConnectionUrl.parse(url);
+		boolean effectivePlaintext = disableSSL || parsed.isPlaintextByScheme()
+				|| Boolean.parseBoolean(parsed.getQueryParams().get(HAConstants.CONNECTION_PROPERTY_DISABLE_SSL));
+		String effectivePolicy = (loadBalancerPolicy != null && !loadBalancerPolicy.trim().isEmpty())
+				? loadBalancerPolicy
+				: parsed.getQueryParams().getOrDefault(HAConstants.CONNECTION_PROPERTY_LOAD_BALANCER_POLICY,
+						HAConstants.DEFAULT_LOAD_BALANCER_POLICY);
+		HAChannelManager.Lease lease = HAChannelManager.acquire(parsed.toGrpcTarget(), effectivePlaintext,
+				effectivePolicy);
+		return new UrlChannelInit(lease, parsed.getReplicationId());
+	}
+
+	private HAClient(UrlChannelInit init, String token) {
+		this(init.lease, init.lease.getChannel(), init.replicationId, token);
+	}
+
+	private HAClient(HAChannelManager.Lease channelLease, ManagedChannel channel, String replicationID, String token) {
+		this.channelLease = channelLease;
 		this.channel = channel;
 		this.replicationID = replicationID != null ? replicationID : "";
 
 		CallCredentials credentials = new Credentials(token);
 		this.stub = DatabaseServiceGrpc.newBlockingV2Stub(channel).withCallCredentials(credentials);
-		this.queryCall = this.stub.query();
 
 		this.executor = Executors.newSingleThreadScheduledExecutor(r -> {
 			Thread t = new Thread(r, "ha-client-ping");
@@ -79,7 +130,7 @@ public class HAClient implements AutoCloseable {
 		});
 
 		Runnable pingTask = () -> {
-			if (this.closed) {
+			if (this.closed || !hasOpenQueryStream()) {
 				return;
 			}
 			try {
@@ -93,25 +144,40 @@ public class HAClient implements AutoCloseable {
 		this.executor.scheduleWithFixedDelay(pingTask, 25, 25, TimeUnit.SECONDS);
 	}
 
-	private static String extractReplicationId(URL url) {
-		String path = url.getPath();
-		if (path == null) {
-			return "";
-		}
-		return path.startsWith("/") ? path.substring(1) : path;
+	private synchronized boolean hasOpenQueryStream() {
+		return this.queryCall != null;
 	}
 
-	private static ManagedChannel buildChannel(URL url, boolean disableSSL) {
-		int port = url.getPort() != -1 ? url.getPort() : url.getDefaultPort();
-		if (port <= 0) {
-			port = "https".equalsIgnoreCase(url.getProtocol()) ? 443 : 80;
-		}
-		ManagedChannelBuilder<?> channelBuilder = ManagedChannelBuilder.forAddress(url.getHost(), port)
-				.keepAliveTime(25, TimeUnit.SECONDS).keepAliveTimeout(10, TimeUnit.SECONDS).keepAliveWithoutCalls(true);
-		if (disableSSL || "http".equalsIgnoreCase(url.getProtocol())) {
-			channelBuilder = channelBuilder.usePlaintext();
-		}
-		return channelBuilder.build();
+	public ManagedChannel getChannel() {
+		return this.channel;
+	}
+
+	public void setInTransaction(boolean inTransaction) {
+		this.inTransaction = inTransaction;
+	}
+
+	public boolean isInTransaction() {
+		return this.inTransaction;
+	}
+
+	public synchronized void markStreamTransactionStarted() {
+		this.streamHasTransaction = true;
+	}
+
+	public synchronized void markStreamTransactionEnded() {
+		this.streamHasTransaction = false;
+	}
+
+	public synchronized boolean hasActiveStreamTransaction() {
+		return this.queryCall != null && this.streamHasTransaction;
+	}
+
+	public void setReadOnlySession(boolean readOnlySession) {
+		this.readOnlySession = readOnlySession;
+	}
+
+	public boolean isReadOnlySession() {
+		return this.readOnlySession;
 	}
 
 	public void downloadCurrentReplica(String dir, String replicationID, boolean override)
@@ -261,13 +327,98 @@ public class HAClient implements AutoCloseable {
 
 	private synchronized QueryResponse send(String sql, Map<Object, Object> parameters, QueryType type, int timeout)
 			throws SQLException {
+		return sendInternal(sql, parameters, type, timeout, true);
+	}
+
+	private QueryResponse sendInternal(String sql, Map<Object, Object> parameters, QueryType type, int timeout,
+			boolean allowReconnectRetry) throws SQLException {
 		if (this.closed) {
 			throw new HAException("Connection is closed");
 		}
+
+		boolean reusedStream = (this.queryCall != null);
 		if (this.queryCall == null) {
 			this.queryCall = this.stub.query();
+			this.streamHasTransaction = false;
+			if (this.readOnlySession && !isPragmaQueryOnlyStatement(sql)) {
+				applyReadOnlyPragmaOnNewStream(timeout);
+			}
 		}
 
+		QueryRequest request = buildQueryRequest(sql, parameters, type);
+		QueryResponse response;
+		try {
+			response = writeAndRead(request, timeout);
+		} catch (TimeoutException e) {
+			resetQueryCall("Query timed out", e);
+			throw new SQLTimeoutException("Query timed out after " + timeout + " seconds", e);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			resetQueryCall("Query interrupted", e);
+			throw new HAException("Query interrupted", e);
+		} catch (StatusException e) {
+			resetQueryCall("gRPC stream failed", e);
+			if (allowReconnectRetry && reusedStream && !this.inTransaction && isIdempotentQueryType(type)
+					&& isRetryableStreamDisconnect(e)) {
+				return sendInternal(sql, parameters, type, timeout, false);
+			}
+			throw new HAException("gRPC error: " + e.getMessage(), e);
+		}
+
+		if (response == null) {
+			resetQueryCall("Stream closed by server", null);
+			if (allowReconnectRetry && reusedStream && !this.inTransaction && isIdempotentQueryType(type)) {
+				return sendInternal(sql, parameters, type, timeout, false);
+			}
+			throw new HAException("Query stream closed unexpectedly by server");
+		}
+
+		if (response.getTxseq() > 0) {
+			this.txseq = response.getTxseq();
+		}
+		if (!response.getError().isEmpty()) {
+			throw new HAException(response.getError());
+		}
+
+		return response;
+	}
+
+	private void applyReadOnlyPragmaOnNewStream(int timeout) throws SQLException {
+		QueryRequest pragmaReq = buildQueryRequest("PRAGMA query_only = 1", null, QueryType.QUERY_TYPE_EXEC_UPDATE);
+		try {
+			QueryResponse resp = writeAndRead(pragmaReq, timeout);
+			if (resp == null) {
+				resetQueryCall("Stream closed during read-only initialization", null);
+				throw new HAException("Query stream closed unexpectedly by server");
+			}
+			if (!resp.getError().isEmpty()) {
+				throw new HAException(resp.getError());
+			}
+		} catch (TimeoutException e) {
+			resetQueryCall("Read-only initialization timed out", e);
+			throw new SQLTimeoutException("Query timed out after " + timeout + " seconds", e);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			resetQueryCall("Read-only initialization interrupted", e);
+			throw new HAException("Query interrupted", e);
+		} catch (StatusException e) {
+			resetQueryCall("Read-only initialization failed", e);
+			throw new HAException("gRPC error: " + e.getMessage(), e);
+		}
+	}
+
+	private QueryResponse writeAndRead(QueryRequest request, int timeout)
+			throws StatusException, InterruptedException, TimeoutException {
+		if (timeout > 0) {
+			this.queryCall.write(request, timeout, TimeUnit.SECONDS);
+			return this.queryCall.read(timeout, TimeUnit.SECONDS);
+		}
+		this.queryCall.write(request);
+		return this.queryCall.read();
+	}
+
+	private QueryRequest buildQueryRequest(String sql, Map<Object, Object> parameters, QueryType type)
+			throws SQLException {
 		String repId = this.replicationID != null ? this.replicationID : "";
 		QueryRequest.Builder builder = QueryRequest.newBuilder().setReplicationId(repId)
 				.setSql(sql != null ? sql : "").setType(type);
@@ -293,45 +444,31 @@ public class HAClient implements AutoCloseable {
 			}
 			builder.addAllParams(namedValues);
 		}
+		return builder.build();
+	}
 
-		QueryRequest request = builder.build();
-		QueryResponse response;
-		try {
-			if (timeout > 0) {
-				this.queryCall.write(request, timeout, TimeUnit.SECONDS);
-				response = this.queryCall.read(timeout, TimeUnit.SECONDS);
-			} else {
-				this.queryCall.write(request);
-				response = this.queryCall.read();
-			}
-		} catch (TimeoutException e) {
-			resetQueryCall("Query timed out", e);
-			throw new SQLTimeoutException("Query timed out after " + timeout + " seconds", e);
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			resetQueryCall("Query interrupted", e);
-			throw new HAException("Query interrupted", e);
-		} catch (StatusException e) {
-			resetQueryCall("gRPC stream failed", e);
-			throw new HAException("gRPC error: " + e.getMessage(), e);
+	private boolean isRetryableStreamDisconnect(StatusException e) {
+		if (this.closed || Thread.currentThread().isInterrupted()) {
+			return false;
 		}
+		Status.Code code = e.getStatus().getCode();
+		return code == Status.Code.UNAVAILABLE || code == Status.Code.CANCELLED;
+	}
 
-		if (response == null) {
-			resetQueryCall("Stream closed by server", null);
-			throw new HAException("Query stream closed unexpectedly by server");
-		}
+	private static boolean isIdempotentQueryType(QueryType type) {
+		return type == QueryType.QUERY_TYPE_EXEC_QUERY || type == QueryType.QUERY_TYPE_PING;
+	}
 
-		if (response.getTxseq() > 0) {
-			this.txseq = response.getTxseq();
+	private static boolean isPragmaQueryOnlyStatement(String sql) {
+		if (sql == null) {
+			return false;
 		}
-		if (!response.getError().isEmpty()) {
-			throw new HAException(response.getError());
-		}
-
-		return response;
+		String normalized = HAUtils.stripLeadingComments(sql).trim().toLowerCase(Locale.ENGLISH);
+		return normalized.startsWith("pragma query_only") && normalized.contains("=");
 	}
 
 	private void resetQueryCall(String reason, Throwable cause) {
+		this.streamHasTransaction = false;
 		if (this.queryCall != null) {
 			try {
 				this.queryCall.cancel(reason, cause);
@@ -358,6 +495,7 @@ public class HAClient implements AutoCloseable {
 		this.closed = true;
 		this.executor.shutdownNow();
 		synchronized (this) {
+			this.streamHasTransaction = false;
 			if (this.queryCall != null) {
 				try {
 					this.queryCall.halfClose();
@@ -366,16 +504,10 @@ public class HAClient implements AutoCloseable {
 				this.queryCall = null;
 			}
 		}
-		if (this.channel != null && !this.channel.isShutdown()) {
-			this.channel.shutdown();
-			try {
-				if (!this.channel.awaitTermination(2, TimeUnit.SECONDS)) {
-					this.channel.shutdownNow();
-				}
-			} catch (InterruptedException e) {
-				this.channel.shutdownNow();
-				Thread.currentThread().interrupt();
-			}
+		if (this.channelLease != null) {
+			this.channelLease.close();
+		} else {
+			HAChannelManager.shutdownChannel(this.channel);
 		}
 	}
 

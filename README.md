@@ -93,6 +93,29 @@ connection.close();
 
 ## Advanced Configuration
 
+### Client-Side gRPC Load Balancing
+
+The driver supports client-side gRPC load balancing across multiple HA nodes (comma-separated endpoints) as well as DNS service discovery (such as Kubernetes headless services). Connections targeting the same cluster share a managed gRPC channel and use `round_robin` by default.
+
+```java
+// Multi-node cluster URL (uses round_robin by default)
+HADataSource dataSource = new HADataSource();
+dataSource.setUrl("litesql://node1:8080,node2:8080,node3:8080/mydatabase.sqlite");
+
+// Or via DNS discovery (e.g. Kubernetes headless service)
+dataSource.setUrl("dns:///ha-headless.default.svc.cluster.local:8080/mydatabase.sqlite");
+dataSource.setDisableSSL(true);
+
+// Optional: customize gRPC load balancing policy (e.g. round_robin, pick_first)
+dataSource.setLoadBalancerPolicy("round_robin");
+```
+
+You can also pass `loadBalancerPolicy` directly in the connection URL query string:
+
+```
+jdbc:litesql:ha:http://node1:8080,node2:8080/mydatabase.sqlite?loadBalancerPolicy=pick_first
+```
+
 ### Using Embedded Replicas for Read Optimization
 
 Embedded replicas allow you to download and query read-only copies of your database locally, improving read performance. All write operations are automatically routed to the HA server.

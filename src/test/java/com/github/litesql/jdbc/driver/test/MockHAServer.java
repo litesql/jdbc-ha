@@ -59,6 +59,8 @@ public class MockHAServer implements AutoCloseable {
 	private final Path dbDir;
 	private final Map<String, Path> databases = new ConcurrentHashMap<>();
 	private final AtomicLong txseq = new AtomicLong(1L);
+	private final AtomicLong openedStreams = new AtomicLong(0L);
+	private final AtomicLong handledQueries = new AtomicLong(0L);
 	private final AtomicReference<String> lastAuthToken = new AtomicReference<>("");
 	private volatile long artificialDelayMs = 0L;
 	private final Server server;
@@ -114,6 +116,14 @@ public class MockHAServer implements AutoCloseable {
 		return txseq.get();
 	}
 
+	public long getOpenedStreamCount() {
+		return openedStreams.get();
+	}
+
+	public long getHandledQueryCount() {
+		return handledQueries.get();
+	}
+
 	@Override
 	public void close() {
 		server.shutdownNow();
@@ -123,11 +133,13 @@ public class MockHAServer implements AutoCloseable {
 
 		@Override
 		public StreamObserver<QueryRequest> query(StreamObserver<QueryResponse> responseObserver) {
+			openedStreams.incrementAndGet();
 			final Map<String, Connection> sessionConns = new ConcurrentHashMap<>();
 
 			return new StreamObserver<QueryRequest>() {
 				@Override
 				public void onNext(QueryRequest request) {
+					handledQueries.incrementAndGet();
 					try {
 						long delay = artificialDelayMs;
 						if (delay > 0 && request.getSql().contains("SLOW_QUERY")) {

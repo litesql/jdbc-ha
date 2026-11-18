@@ -1,23 +1,20 @@
 package com.github.litesql.jdbc.ha;
 
 import java.net.InetAddress;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.net.URLDecoder;
 import java.net.UnknownHostException;
-import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.Driver;
 import java.sql.DriverManager;
 import java.sql.DriverPropertyInfo;
 import java.sql.SQLException;
 import java.util.Enumeration;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import com.github.litesql.jdbc.ha.client.HAConnectionUrl;
 
 public class HADriver implements Driver {
 
@@ -69,7 +66,7 @@ public class HADriver implements Driver {
 		try {
 			Map<String, String> queryParam = parseURLOptions(targetUrl);
 			props.putAll(queryParam);
-		} catch (MalformedURLException e) {
+		} catch (IllegalArgumentException e) {
 			throw new HAException("Invalid connection URL: " + url, e);
 		}
 
@@ -106,30 +103,8 @@ public class HADriver implements Driver {
 		return val != null ? val.toString() : defaultVal;
 	}
 
-	private Map<String, String> parseURLOptions(String urlString) throws MalformedURLException {
-		URL url = new URL(urlString);
-		String queryString = url.getQuery();
-
-		Map<String, String> queryParams = new HashMap<>();
-		if (queryString != null && !queryString.isEmpty()) {
-			String[] params = queryString.split("&");
-			for (String param : params) {
-				if (param.isEmpty()) {
-					continue;
-				}
-				int eqIdx = param.indexOf('=');
-				if (eqIdx > 0) {
-					String key = URLDecoder.decode(param.substring(0, eqIdx), StandardCharsets.UTF_8);
-					String value = URLDecoder.decode(param.substring(eqIdx + 1), StandardCharsets.UTF_8);
-					queryParams.put(key, value);
-				} else if (eqIdx < 0) {
-					String key = URLDecoder.decode(param, StandardCharsets.UTF_8);
-					queryParams.put(key, "");
-				}
-			}
-		}
-
-		return queryParams;
+	private Map<String, String> parseURLOptions(String urlString) {
+		return HAConnectionUrl.parse(urlString).getQueryParams();
 	}
 
 	@Override
@@ -162,6 +137,12 @@ public class HADriver implements Driver {
 				"Use plaintext gRPC connection without TLS");
 		disableSslProp.choices = new String[] { "true", "false" };
 
+		DriverPropertyInfo lbPolicyProp = createProperty(HAConstants.CONNECTION_PROPERTY_LOAD_BALANCER_POLICY,
+				effective.getProperty(HAConstants.CONNECTION_PROPERTY_LOAD_BALANCER_POLICY,
+						HAConstants.DEFAULT_LOAD_BALANCER_POLICY),
+				"gRPC client load balancing policy (e.g. round_robin, pick_first)");
+		lbPolicyProp.choices = new String[] { "round_robin", "pick_first" };
+
 		DriverPropertyInfo timeoutProp = createProperty(HAConstants.CONNECTION_PROPERTY_TIMEOUT,
 				effective.getProperty(HAConstants.CONNECTION_PROPERTY_TIMEOUT,
 						String.valueOf(HAConstants.DEFAULT_TIMEOUT)),
@@ -182,8 +163,8 @@ public class HADriver implements Driver {
 						hostname != null ? hostname : ""),
 				"Unique NATS durable consumer name for this replica node");
 
-		return new DriverPropertyInfo[] { passwordProp, disableSslProp, timeoutProp, embeddedDirProp, repUrlProp,
-				repStreamProp, repDurableProp };
+		return new DriverPropertyInfo[] { passwordProp, disableSslProp, lbPolicyProp, timeoutProp, embeddedDirProp,
+				repUrlProp, repStreamProp, repDurableProp };
 	}
 
 	private static DriverPropertyInfo createProperty(String name, String value, String description) {

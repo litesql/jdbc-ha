@@ -2,8 +2,6 @@ package com.github.litesql.jdbc.ha;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.net.MalformedURLException;
-import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -16,6 +14,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.jkiss.code.NotNull;
+
+import com.github.litesql.jdbc.ha.client.HAConnectionUrl;
 
 public class HAUtils {
 
@@ -100,29 +100,11 @@ public class HAUtils {
 					+ HAConstants.CONNECTION_URL_EXAMPLES);
 		}
 
-		String formattedUrl = url;
-		if (formattedUrl.startsWith("jdbc:litesql:ha:")) {
-			formattedUrl = formattedUrl.substring("jdbc:litesql:ha:".length());
-		}
-		if (formattedUrl.startsWith("litesql://")) {
-			formattedUrl = "http://" + formattedUrl.substring("litesql://".length());
-		} else if (formattedUrl.startsWith("litesqls://")) {
-			formattedUrl = "https://" + formattedUrl.substring("litesqls://".length());
-		} else if (formattedUrl.startsWith("//")) {
-			formattedUrl = "http:" + formattedUrl;
-		}
-
 		try {
-			URL parsed = new URL(formattedUrl);
-			if (parsed.getHost() == null || parsed.getHost().isEmpty()) {
-				throw new HAException("Missing host in connection URL: " + url);
-			}
-		} catch (MalformedURLException e) {
-			throw new HAException("Invalid connection URL: " + url + ".\nExpected URL formats: "
-					+ HAConstants.CONNECTION_URL_EXAMPLES, e);
+			return HAConnectionUrl.parse(url).getFormattedUrl();
+		} catch (IllegalArgumentException e) {
+			throw new HAException(e.getMessage(), e);
 		}
-
-		return formattedUrl;
 	}
 
 	public static String stripLeadingComments(String sql) {

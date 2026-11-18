@@ -4,13 +4,14 @@ import java.util.regex.Pattern;
 
 public class HAConstants {
 
-	public static final String CONNECTION_URL_EXAMPLES = "jdbc:litesql:ha:<server-url>, litesql://<server-url>, litesqls://<server-url>, https://<server-url>";
+	public static final String CONNECTION_URL_EXAMPLES = "jdbc:litesql:ha:<server-url>, litesql://<host1:port1,host2:port2>/<db>, litesqls://<server-url>, https://<server-url>, dns:///<service:port>/<db>";
 	public static final Pattern CONNECTION_URL_PATTERN = Pattern
-			.compile("(jdbc:litesql:ha:|litesqls?://|https://)(.+)");
+			.compile("(jdbc:litesql:ha:|litesqls?://|https://|dns://)(.+)");
 
 	public static final int DEFAULT_TIMEOUT = 60;
 	public static final int DEFAULT_LOGIN_TIMEOUT = 30;
 	public static final String DEFAULT_REPLICATION_STREAM = "ha_replication";
+	public static final String DEFAULT_LOAD_BALANCER_POLICY = "round_robin";
 
 	public static final int DRIVER_VERSION_MAJOR = 1;
 	public static final int DRIVER_VERSION_MINOR = 3;
@@ -29,4 +30,5 @@ public class HAConstants {
 	public static final String CONNECTION_PROPERTY_REPLICATION_URL = "replicationURL";
 	public static final String CONNECTION_PROPERTY_REPLICATION_STREAM = "replicationStream";
 	public static final String CONNECTION_PROPERTY_REPLICATION_DURABLE = "replicationDurable";
+	public static final String CONNECTION_PROPERTY_LOAD_BALANCER_POLICY = "loadBalancerPolicy";
 }

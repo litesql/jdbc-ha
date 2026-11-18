@@ -170,6 +170,15 @@ public class HADataSource implements DataSource {
 		properties.setProperty(HAConstants.CONNECTION_PROPERTY_TIMEOUT, String.valueOf(seconds));
 	}
 
+	public String getLoadBalancerPolicy() {
+		return properties.getProperty(HAConstants.CONNECTION_PROPERTY_LOAD_BALANCER_POLICY,
+				HAConstants.DEFAULT_LOAD_BALANCER_POLICY);
+	}
+
+	public void setLoadBalancerPolicy(String policy) {
+		setOrRemoveProperty(HAConstants.CONNECTION_PROPERTY_LOAD_BALANCER_POLICY, policy);
+	}
+
 	private void setOrRemoveProperty(String key, String value) {
 		if (value == null) {
 			properties.remove(key);
