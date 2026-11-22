@@ -14,7 +14,7 @@ public class HAConstants {
 	public static final String DEFAULT_LOAD_BALANCER_POLICY = "round_robin";
 
 	public static final int DRIVER_VERSION_MAJOR = 1;
-	public static final int DRIVER_VERSION_MINOR = 4;
+	public static final int DRIVER_VERSION_MINOR = 5;
 	public static final int DRIVER_VERSION_MICRO = 0;
 
 	public static final String DRIVER_NAME = "LiteSQL HA";

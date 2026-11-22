@@ -24,7 +24,6 @@ import java.util.logging.Logger;
 import com.github.litesql.jdbc.ha.HAConstants;
 import com.github.litesql.jdbc.ha.HAException;
 import com.github.litesql.jdbc.ha.HAUtils;
-import com.google.protobuf.Any;
 import com.google.protobuf.InvalidProtocolBufferException;
 
 import build.buf.gen.sql.v1.DatabaseServiceGrpc;
@@ -428,8 +427,8 @@ public class HAClient implements AutoCloseable {
 			long counter = 1L;
 			for (Map.Entry<Object, Object> entry : parameters.entrySet()) {
 				Object key = entry.getKey();
-				Any anyValue = Converter.toAny(entry.getValue());
-				NamedValue.Builder nvBuilder = NamedValue.newBuilder().setValue(anyValue);
+				build.buf.gen.sql.v1.TypedValue typedValue = Converter.toAny(entry.getValue());
+				NamedValue.Builder nvBuilder = NamedValue.newBuilder().setValue(typedValue);
 				if (key instanceof Number) {
 					nvBuilder.setOrdinal(((Number) key).longValue());
 				} else {

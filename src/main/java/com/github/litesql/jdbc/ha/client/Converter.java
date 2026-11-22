@@ -23,190 +23,214 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import build.buf.gen.sql.v1.TypedValue;
+import build.buf.gen.sql.v1.ValueType;
+
 import com.github.litesql.jdbc.ha.HAException;
-import com.google.protobuf.Any;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 
 public class Converter {
 
-	public static Object fromAny(Any x) throws InvalidProtocolBufferException {
-		if (x == null || x.getTypeUrl().isEmpty()) {
+	public static Object fromAny(TypedValue x) throws InvalidProtocolBufferException {
+		if (x == null || x.getType() == ValueType.VALUE_TYPE_NULL
+				|| x.getType() == ValueType.VALUE_TYPE_UNSPECIFIED) {
 			return null;
 		}
-		switch (x.getTypeUrl()) {
-		case "type.googleapis.com/google.protobuf.Empty":
-			return null;
-		case "type.googleapis.com/google.protobuf.StringValue":
-			return com.google.protobuf.StringValue.parseFrom(x.getValue()).getValue();
-		case "type.googleapis.com/google.protobuf.DoubleValue":
-			return com.google.protobuf.DoubleValue.parseFrom(x.getValue()).getValue();
-		case "type.googleapis.com/google.protobuf.FloatValue":
-			return com.google.protobuf.FloatValue.parseFrom(x.getValue()).getValue();
-		case "type.googleapis.com/google.protobuf.Int64Value":
-			return com.google.protobuf.Int64Value.parseFrom(x.getValue()).getValue();
-		case "type.googleapis.com/google.protobuf.Int32Value":
-			return com.google.protobuf.Int32Value.parseFrom(x.getValue()).getValue();
-		case "type.googleapis.com/google.protobuf.UInt64Value":
-			return com.google.protobuf.UInt64Value.parseFrom(x.getValue()).getValue();
-		case "type.googleapis.com/google.protobuf.UInt32Value":
-			return com.google.protobuf.UInt32Value.parseFrom(x.getValue()).getValue();
-		case "type.googleapis.com/google.protobuf.BoolValue":
-			return com.google.protobuf.BoolValue.parseFrom(x.getValue()).getValue();
-		case "type.googleapis.com/google.protobuf.Timestamp":
-			com.google.protobuf.Timestamp timestamp = com.google.protobuf.Timestamp.parseFrom(x.getValue());
-			return Instant.ofEpochSecond(timestamp.getSeconds(), timestamp.getNanos());
-		case "type.googleapis.com/google.protobuf.BytesValue":
-			return com.google.protobuf.BytesValue.parseFrom(x.getValue()).getValue().toByteArray();
+		switch (x.getType()) {
+		case VALUE_TYPE_STRING:
+			return x.getStringVal();
+		case VALUE_TYPE_DOUBLE:
+			return x.getDoubleVal();
+		case VALUE_TYPE_INT64:
+			return x.getInt64Val();
+		case VALUE_TYPE_UINT64:
+			return BigInteger.valueOf(x.getUint64Val()).and(BigInteger.ONE.shiftLeft(64).subtract(BigInteger.ONE));
+		case VALUE_TYPE_BOOL:
+			return x.getBoolVal();
+		case VALUE_TYPE_TIMESTAMP:
+			long nanos = x.getInt64Val();
+			if (nanos == 0L && !x.getStringVal().isEmpty()) {
+				return x.getStringVal();
+			}
+			return Instant.ofEpochSecond(Math.floorDiv(nanos, 1_000_000_000L), Math.floorMod(nanos, 1_000_000_000L));
+		case VALUE_TYPE_BYTES:
+			return x.getBytesVal().toByteArray();
 		default:
-			throw new InvalidProtocolBufferException("Unsupported protobuf Any type: " + x.getTypeUrl());
+			throw new InvalidProtocolBufferException("Unsupported TypedValue type: " + x.getType());
 		}
 	}
 
-	public static Any toAny(Object x) throws SQLException {
+	public static TypedValue toAny(Object x) throws SQLException {
 		if (x == null) {
-			return Any.pack(com.google.protobuf.Empty.getDefaultInstance());
+			return TypedValue.newBuilder().setType(ValueType.VALUE_TYPE_NULL).build();
 		}
 
 		try {
 			if (x instanceof String) {
-				return Any.pack(com.google.protobuf.StringValue.of((String) x));
+				return stringValue((String) x);
 			}
 
 			if (x instanceof HAReaderInput) {
 				String s = ((HAReaderInput) x).readString();
-				return s == null ? Any.pack(com.google.protobuf.Empty.getDefaultInstance())
-						: Any.pack(com.google.protobuf.StringValue.of(s));
+				return s == null ? nullValue() : stringValue(s);
 			}
 
 			if (x instanceof HAStreamInput) {
 				HAStreamInput streamInput = (HAStreamInput) x;
 				if (streamInput.isText()) {
 					String s = streamInput.readString();
-					return s == null ? Any.pack(com.google.protobuf.Empty.getDefaultInstance())
-							: Any.pack(com.google.protobuf.StringValue.of(s));
+					return s == null ? nullValue() : stringValue(s);
 				}
 				byte[] bytes = streamInput.readBytes();
-				return bytes == null ? Any.pack(com.google.protobuf.Empty.getDefaultInstance())
-						: Any.pack(com.google.protobuf.BytesValue.of(ByteString.copyFrom(bytes)));
+				return bytes == null ? nullValue() : bytesValue(bytes);
 			}
 
 			if (x instanceof Reader) {
 				String s = new HAReaderInput((Reader) x, -1).readString();
-				return Any.pack(com.google.protobuf.StringValue.of(s));
+				return s == null ? nullValue() : stringValue(s);
 			}
 
 			if (x instanceof InputStream) {
 				byte[] bytes = new HAStreamInput((InputStream) x, -1).readBytes();
-				return Any.pack(com.google.protobuf.BytesValue.of(ByteString.copyFrom(bytes)));
+				return bytes == null ? nullValue() : bytesValue(bytes);
 			}
 
 			if (x instanceof Clob) {
 				Clob clob = (Clob) x;
 				long len = clob.length();
 				String s = len == 0 ? "" : new HAReaderInput(clob.getCharacterStream(), len).readString();
-				return Any.pack(com.google.protobuf.StringValue.of(s));
+				return s == null ? nullValue() : stringValue(s);
 			}
 
 			if (x instanceof Blob) {
 				Blob blob = (Blob) x;
 				long len = blob.length();
 				byte[] bytes = len == 0 ? new byte[0] : new HAStreamInput(blob.getBinaryStream(), len).readBytes();
-				return Any.pack(com.google.protobuf.BytesValue.of(ByteString.copyFrom(bytes)));
+				return bytesValue(bytes);
 			}
 
 			if (x instanceof SQLXML) {
-				return Any.pack(com.google.protobuf.StringValue.of(((SQLXML) x).getString()));
+				return stringValue(((SQLXML) x).getString());
 			}
 
 			if (x instanceof RowId) {
-				return Any.pack(com.google.protobuf.BytesValue.of(ByteString.copyFrom(((RowId) x).getBytes())));
+				return bytesValue(((RowId) x).getBytes());
 			}
 
 			if (x instanceof URL || x instanceof UUID || x instanceof LocalDate || x instanceof LocalTime
-					|| x instanceof LocalDateTime) {
-				return Any.pack(com.google.protobuf.StringValue.of(x.toString()));
+					|| x instanceof LocalDateTime || x instanceof java.sql.Date || x instanceof java.sql.Time) {
+				return stringValue(x.toString());
 			}
 
 			if (x instanceof Double) {
-				return Any.pack(com.google.protobuf.DoubleValue.of((Double) x));
+				return doubleValue((Double) x);
 			}
 
 			if (x instanceof Float) {
-				return Any.pack(com.google.protobuf.FloatValue.of((Float) x));
+				return doubleValue(((Float) x).doubleValue());
 			}
 
 			if (x instanceof BigDecimal) {
-				return Any.pack(com.google.protobuf.DoubleValue.of(((BigDecimal) x).doubleValue()));
+				return doubleValue(((BigDecimal) x).doubleValue());
 			}
 
 			if (x instanceof Long) {
-				return Any.pack(com.google.protobuf.Int64Value.of((Long) x));
+				return int64Value((Long) x);
 			}
 
 			if (x instanceof AtomicLong) {
-				return Any.pack(com.google.protobuf.Int64Value.of(((AtomicLong) x).get()));
+				return int64Value(((AtomicLong) x).get());
 			}
 
 			if (x instanceof BigInteger) {
 				BigInteger bi = (BigInteger) x;
 				if (bi.bitLength() <= 63) {
-					return Any.pack(com.google.protobuf.Int64Value.of(bi.longValue()));
+					return int64Value(bi.longValue());
 				}
-				return Any.pack(com.google.protobuf.StringValue.of(bi.toString()));
+				return stringValue(bi.toString());
 			}
 
-			if (x instanceof Integer || x instanceof Short || x instanceof Byte || x instanceof AtomicInteger) {
-				return Any.pack(com.google.protobuf.Int32Value.of(((Number) x).intValue()));
+			if (x instanceof Integer) {
+				return int64Value(((Integer) x).longValue());
+			}
+			if (x instanceof Short) {
+				return int64Value(((Short) x).longValue());
+			}
+			if (x instanceof Byte) {
+				return int64Value(((Byte) x).longValue());
+			}
+			if (x instanceof AtomicInteger) {
+				return int64Value(((AtomicInteger) x).longValue());
 			}
 
 			if (x instanceof Boolean) {
-				return Any.pack(com.google.protobuf.BoolValue.of((Boolean) x));
+				return TypedValue.newBuilder().setType(ValueType.VALUE_TYPE_BOOL).setBoolVal((Boolean) x).build();
 			}
 
 			if (x instanceof Timestamp) {
-				Timestamp ts = (Timestamp) x;
-				return Any.pack(com.google.protobuf.Timestamp.newBuilder()
-						.setSeconds(Math.floorDiv(ts.getTime(), 1000L)).setNanos(ts.getNanos()).build());
+				return timestampValue(((Timestamp) x).toInstant());
 			}
 
 			if (x instanceof Instant) {
-				Instant v = (Instant) x;
-				return Any.pack(com.google.protobuf.Timestamp.newBuilder().setSeconds(v.getEpochSecond())
-						.setNanos(v.getNano()).build());
+				return timestampValue((Instant) x);
 			}
 
 			if (x instanceof OffsetDateTime) {
-				Instant v = ((OffsetDateTime) x).toInstant();
-				return Any.pack(com.google.protobuf.Timestamp.newBuilder().setSeconds(v.getEpochSecond())
-						.setNanos(v.getNano()).build());
+				return timestampValue(((OffsetDateTime) x).toInstant());
 			}
 
 			if (x instanceof ZonedDateTime) {
-				Instant v = ((ZonedDateTime) x).toInstant();
-				return Any.pack(com.google.protobuf.Timestamp.newBuilder().setSeconds(v.getEpochSecond())
-						.setNanos(v.getNano()).build());
+				return timestampValue(((ZonedDateTime) x).toInstant());
 			}
 
 			if (x instanceof Date) {
-				Date v = (Date) x;
-				return Any.pack(com.google.protobuf.util.Timestamps.fromDate(v));
+				return timestampValue(Instant.ofEpochMilli(((Date) x).getTime()));
 			}
 
 			if (x instanceof byte[]) {
-				byte[] v = (byte[]) x;
-				return Any.pack(com.google.protobuf.BytesValue.of(ByteString.copyFrom(v)));
+				return bytesValue((byte[]) x);
 			}
 
 			if (x instanceof ByteString) {
-				ByteString v = (ByteString) x;
-				return Any.pack(com.google.protobuf.BytesValue.of(v));
+				return TypedValue.newBuilder().setType(ValueType.VALUE_TYPE_BYTES).setBytesVal((ByteString) x).build();
 			}
 		} catch (IOException e) {
 			throw new HAException("Failed to read stream parameter", e);
 		}
 
 		throw new HAException("Unsupported parameter type: " + x.getClass().getName());
+	}
+
+	private static TypedValue nullValue() {
+		return TypedValue.newBuilder().setType(ValueType.VALUE_TYPE_NULL).build();
+	}
+
+	private static TypedValue stringValue(String value) {
+		return TypedValue.newBuilder().setType(ValueType.VALUE_TYPE_STRING).setStringVal(value).build();
+	}
+
+	private static TypedValue bytesValue(byte[] value) {
+		return TypedValue.newBuilder().setType(ValueType.VALUE_TYPE_BYTES)
+				.setBytesVal(ByteString.copyFrom(value)).build();
+	}
+
+	private static TypedValue doubleValue(double value) {
+		return TypedValue.newBuilder().setType(ValueType.VALUE_TYPE_DOUBLE).setDoubleVal(value).build();
+	}
+
+	private static TypedValue int64Value(long value) {
+		return TypedValue.newBuilder().setType(ValueType.VALUE_TYPE_INT64).setInt64Val(value).build();
+	}
+
+	private static TypedValue timestampValue(Instant instant) {
+		try {
+			long nanos = Math.addExact(Math.multiplyExact(instant.getEpochSecond(), 1_000_000_000L),
+					instant.getNano());
+			return TypedValue.newBuilder().setType(ValueType.VALUE_TYPE_TIMESTAMP).setInt64Val(nanos).build();
+		} catch (ArithmeticException e) {
+			return stringValue(instant.toString());
+		}
 	}
 
 	public static Object unwrapForLocalJdbc(Object value) throws SQLException {
@@ -223,7 +247,8 @@ public class Converter {
 			}
 			if (value instanceof Instant || value instanceof OffsetDateTime || value instanceof ZonedDateTime
 					|| value instanceof LocalDate || value instanceof LocalTime || value instanceof LocalDateTime
-					|| value instanceof UUID || value instanceof URL) {
+					|| value instanceof java.sql.Date || value instanceof java.sql.Time || value instanceof UUID
+					|| value instanceof URL) {
 				return value.toString();
 			}
 			return value;

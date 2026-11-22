@@ -19,7 +19,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.github.litesql.jdbc.ha.client.Converter;
-import com.google.protobuf.Any;
 import com.google.protobuf.ByteString;
 
 import build.buf.gen.sql.v1.Data;
@@ -35,6 +34,8 @@ import build.buf.gen.sql.v1.QueryType;
 import build.buf.gen.sql.v1.ReplicationIDsRequest;
 import build.buf.gen.sql.v1.ReplicationIDsResponse;
 import build.buf.gen.sql.v1.Row;
+import build.buf.gen.sql.v1.TypedValue;
+import build.buf.gen.sql.v1.ValueType;
 import io.grpc.Context;
 import io.grpc.Contexts;
 import io.grpc.Grpc;
@@ -201,9 +202,27 @@ public class MockHAServer implements AutoCloseable {
 		private QueryResponse executeOnSqlite(Connection conn, QueryRequest req) throws Exception {
 			String sql = req.getSql().trim();
 			if ("SELECT PROTO_TIMESTAMP_TEST".equalsIgnoreCase(sql)) {
-				Instant sampleInstant = Instant.parse("2026-11-17T12:34:56.789Z");
-				Row row = Row.newBuilder().addValues(Converter.toAny(sampleInstant)).build();
-				Data data = Data.newBuilder().addColumns("ts_col").addRows(row).build();
+				// Simulate go-ha encoding time.UTC().UnixNano() directly in int64_val:
+				// 1) 2026-11-17T12:34:56.789123456Z
+				Instant sampleInstant = Instant.parse("2026-11-17T12:34:56.789123456Z");
+				long unixNano = sampleInstant.getEpochSecond() * 1_000_000_000L + sampleInstant.getNano();
+				// 2) 2026-11-17T00:00:00Z (midnight UTC, how Go SQLite drivers scan DATE columns)
+				Instant dateMidnightUtc = Instant.parse("2026-11-17T00:00:00Z");
+				long dateUnixNano = dateMidnightUtc.getEpochSecond() * 1_000_000_000L;
+				// 3) 1969-12-31T23:59:59.123456789Z (pre-1970 negative UnixNano)
+				Instant preEpoch = Instant.parse("1969-12-31T23:59:59.123456789Z");
+				long preEpochUnixNano = preEpoch.getEpochSecond() * 1_000_000_000L + preEpoch.getNano();
+
+				Row row = Row.newBuilder()
+						.addValues(TypedValue.newBuilder().setType(ValueType.VALUE_TYPE_TIMESTAMP)
+								.setInt64Val(unixNano).build())
+						.addValues(TypedValue.newBuilder().setType(ValueType.VALUE_TYPE_TIMESTAMP)
+								.setInt64Val(dateUnixNano).build())
+						.addValues(TypedValue.newBuilder().setType(ValueType.VALUE_TYPE_TIMESTAMP)
+								.setInt64Val(preEpochUnixNano).build())
+						.build();
+				Data data = Data.newBuilder().addColumns("ts_col").addColumns("date_col").addColumns("pre_epoch_col")
+						.addRows(row).build();
 				return QueryResponse.newBuilder().setResultSet(data).setTxseq(txseq.get()).build();
 			}
 
@@ -295,8 +314,8 @@ public class MockHAServer implements AutoCloseable {
 				Row.Builder rowBuilder = Row.newBuilder();
 				for (int i = 1; i <= colCount; i++) {
 					Object obj = rs.getObject(i);
-					Any anyVal = Converter.toAny(obj);
-					rowBuilder.addValues(anyVal);
+					build.buf.gen.sql.v1.TypedValue typedValue = Converter.toAny(obj);
+					rowBuilder.addValues(typedValue);
 				}
 				dataBuilder.addRows(rowBuilder.build());
 			}

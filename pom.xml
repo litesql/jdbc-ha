@@ -5,7 +5,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>io.github.litesql</groupId>
 	<artifactId>jdbc-ha</artifactId>
-	<version>1.4.0</version>
+	<version>1.5.0</version>
 
 	<name>HA JDBC Driver</name>
 	<description>HA JDBC driver dbeaver compatible</description>
@@ -161,7 +161,7 @@
 		<dependency>
 			<groupId>build.buf.gen</groupId>
 			<artifactId>litesql_sqlite-ha_grpc_java</artifactId>
-			<version>1.84.0.2.20261007105339.e0adf155412e</version>
+			<version>1.85.1.1.20261122002217.ac6cffc25017</version>
 			<exclusions>
 				<exclusion>
 					<groupId>com.google.protobuf</groupId>
@@ -172,17 +172,17 @@
 		<dependency>
 			<groupId>io.grpc</groupId>
 			<artifactId>grpc-okhttp</artifactId>
-			<version>1.84.0</version>
+			<version>1.85.1</version>
 		</dependency>
 		<dependency>
 			<groupId>com.google.protobuf</groupId>
 			<artifactId>protobuf-java</artifactId>
-			<version>4.36.1</version>
+			<version>4.36.2</version>
 		</dependency>
 		<dependency>
 			<groupId>com.google.protobuf</groupId>
 			<artifactId>protobuf-java-util</artifactId>
-			<version>4.36.1</version>
+			<version>4.36.2</version>
 		</dependency>
 		<dependency>
 			<groupId>org.xerial</groupId>

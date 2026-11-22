@@ -19,6 +19,10 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.DateTimeParseException;
 import java.util.Calendar;
 import java.util.Collections;
@@ -274,6 +278,14 @@ public class HAResultSet extends AbstractJdbcResultSet<HAStatement, HAResultSetM
 		return object.toString().getBytes(StandardCharsets.UTF_8);
 	}
 
+	private static final DateTimeFormatter FLEXIBLE_OFFSET_DATETIME = new DateTimeFormatterBuilder()
+			.append(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+			.optionalStart().appendLiteral(' ').optionalEnd()
+			.optionalStart().appendOffset("+HH:MM:ss", "Z").optionalEnd()
+			.optionalStart().appendOffset("+HHMMss", "Z").optionalEnd()
+			.optionalStart().appendOffset("+HH", "Z").optionalEnd()
+			.toFormatter(Locale.ROOT);
+
 	@Override
 	public Date getDate(int columnIndex) throws SQLException {
 		return getDate(columnIndex, null);
@@ -281,7 +293,7 @@ public class HAResultSet extends AbstractJdbcResultSet<HAStatement, HAResultSetM
 
 	@Override
 	public Date getDate(int columnIndex, Calendar cal) throws SQLException {
-		Object object = getObject(columnIndex);
+		Object object = getRawObject(columnIndex);
 		if (object == null) {
 			return null;
 		}
@@ -289,32 +301,51 @@ public class HAResultSet extends AbstractJdbcResultSet<HAStatement, HAResultSetM
 		if (object instanceof Date) {
 			return (Date) object;
 		}
+		if (object instanceof Timestamp) {
+			return toSqlDate(((Timestamp) object).toInstant(), cal);
+		}
 		if (object instanceof java.util.Date) {
-			return new Date(((java.util.Date) object).getTime());
+			return toSqlDate(Instant.ofEpochMilli(((java.util.Date) object).getTime()), cal);
 		}
 		if (object instanceof Instant) {
-			LocalDate ld = ((Instant) object).atZone(zone).toLocalDate();
-			return Date.valueOf(ld);
+			return toSqlDate((Instant) object, cal);
 		}
 		if (object instanceof Number) {
-			return new Date(((Number) object).longValue());
+			return toSqlDate(Instant.ofEpochMilli(((Number) object).longValue()), cal);
 		}
 		String s = object.toString().trim();
 		if (s.isEmpty()) {
 			return null;
 		}
 		if (isNumeric(s)) {
-			return new Date(Long.parseLong(s));
+			return toSqlDate(Instant.ofEpochMilli(Long.parseLong(s)), cal);
 		}
 		try {
 			if (s.length() == 10 && s.charAt(4) == '-' && s.charAt(7) == '-') {
-				return Date.valueOf(LocalDate.parse(s));
+				LocalDate ld = LocalDate.parse(s);
+				if (cal == null) {
+					return Date.valueOf(ld);
+				}
+				return new Date(ld.atStartOfDay(zone).toInstant().toEpochMilli());
 			}
 			Timestamp ts = parseTimestampString(s, zone);
-			return new Date(ts.getTime());
+			return toSqlDate(ts.toInstant(), cal);
 		} catch (Exception e) {
 			throw new HAException("Invalid Date value: " + s, e);
 		}
+	}
+
+	private static Date toSqlDate(Instant instant, @Nullable Calendar cal) {
+		if (cal != null) {
+			LocalDate ld = instant.atZone(cal.getTimeZone().toZoneId()).toLocalDate();
+			return Date.valueOf(ld);
+		}
+		// Pure DATE values scanned by Go SQLite drivers arrive as midnight UTC (00:00:00Z).
+		// Keep UTC date for exact midnight UTC so negative offsets (e.g. -03:00) don't shift back 1 day.
+		ZoneId effectiveZone = (instant.getNano() == 0 && Math.floorMod(instant.getEpochSecond(), 86_400L) == 0L)
+				? ZoneOffset.UTC
+				: ZoneId.systemDefault();
+		return Date.valueOf(instant.atZone(effectiveZone).toLocalDate());
 	}
 
 	@Override
@@ -324,13 +355,17 @@ public class HAResultSet extends AbstractJdbcResultSet<HAStatement, HAResultSetM
 
 	@Override
 	public Time getTime(int columnIndex, Calendar cal) throws SQLException {
-		Object object = getObject(columnIndex);
+		Object object = getRawObject(columnIndex);
 		if (object == null) {
 			return null;
 		}
 		ZoneId zone = cal != null ? cal.getTimeZone().toZoneId() : ZoneId.systemDefault();
 		if (object instanceof Time) {
 			return (Time) object;
+		}
+		if (object instanceof Timestamp) {
+			LocalTime lt = ((Timestamp) object).toInstant().atZone(zone).toLocalTime();
+			return Time.valueOf(lt);
 		}
 		if (object instanceof java.util.Date) {
 			return new Time(((java.util.Date) object).getTime());
@@ -354,7 +389,7 @@ public class HAResultSet extends AbstractJdbcResultSet<HAStatement, HAResultSetM
 				return Time.valueOf(LocalTime.parse(s));
 			}
 			Timestamp ts = parseTimestampString(s, zone);
-			return new Time(ts.getTime());
+			return Time.valueOf(ts.toInstant().atZone(zone).toLocalTime());
 		} catch (Exception e) {
 			throw new HAException("Invalid Time value: " + s, e);
 		}
@@ -367,7 +402,7 @@ public class HAResultSet extends AbstractJdbcResultSet<HAStatement, HAResultSetM
 
 	@Override
 	public Timestamp getTimestamp(int columnIndex, Calendar cal) throws SQLException {
-		Object object = getObject(columnIndex);
+		Object object = getRawObject(columnIndex);
 		if (object == null) {
 			return null;
 		}
@@ -407,7 +442,8 @@ public class HAResultSet extends AbstractJdbcResultSet<HAStatement, HAResultSetM
 		return true;
 	}
 
-	private static Timestamp parseTimestampString(String s, ZoneId zone) throws SQLException {
+	private static Timestamp parseTimestampString(String raw, ZoneId zone) throws SQLException {
+		String s = stripGoMonotonicAndZoneName(raw.trim());
 		try {
 			return Timestamp.from(Instant.parse(s));
 		} catch (DateTimeParseException ignored) {
@@ -416,9 +452,17 @@ public class HAResultSet extends AbstractJdbcResultSet<HAStatement, HAResultSetM
 			return Timestamp.from(OffsetDateTime.parse(s).toInstant());
 		} catch (DateTimeParseException ignored) {
 		}
-		String normalized = s.replace(' ', 'T');
+		String normalized = normalizeDateTimeSeparator(s);
+		try {
+			return Timestamp.from(Instant.parse(normalized));
+		} catch (DateTimeParseException ignored) {
+		}
 		try {
 			return Timestamp.from(OffsetDateTime.parse(normalized).toInstant());
+		} catch (DateTimeParseException ignored) {
+		}
+		try {
+			return Timestamp.from(OffsetDateTime.parse(normalized, FLEXIBLE_OFFSET_DATETIME).toInstant());
 		} catch (DateTimeParseException ignored) {
 		}
 		try {
@@ -434,8 +478,38 @@ public class HAResultSet extends AbstractJdbcResultSet<HAStatement, HAResultSetM
 		try {
 			return Timestamp.valueOf(s);
 		} catch (IllegalArgumentException e) {
-			throw new HAException("Invalid Timestamp value: " + s, e);
+			throw new HAException("Invalid Timestamp value: " + raw, e);
 		}
+	}
+
+	private static String normalizeDateTimeSeparator(String s) {
+		if (s.length() > 10 && s.charAt(4) == '-' && s.charAt(7) == '-' && s.charAt(10) == ' ') {
+			return s.substring(0, 10) + 'T' + s.substring(11);
+		}
+		return s;
+	}
+
+	private static String stripGoMonotonicAndZoneName(String s) {
+		int monoIdx = s.indexOf(" m=");
+		if (monoIdx > 0) {
+			s = s.substring(0, monoIdx).trim();
+		}
+		// Handle Go time.Time.String() trailing zone abbreviation, e.g. "2026-11-17 10:15:30.123 -0300 -03" or "... +0000 UTC"
+		if (s.length() > 20 && s.charAt(4) == '-' && s.charAt(7) == '-') {
+			int lastSpace = s.lastIndexOf(' ');
+			if (lastSpace > 18) {
+				String beforeLast = s.substring(0, lastSpace).trim();
+				int prevSpace = beforeLast.lastIndexOf(' ');
+				if (prevSpace >= 18) {
+					String offsetCandidate = beforeLast.substring(prevSpace + 1);
+					if ((offsetCandidate.startsWith("+") || offsetCandidate.startsWith("-"))
+							&& offsetCandidate.length() >= 3) {
+						return beforeLast;
+					}
+				}
+			}
+		}
+		return s;
 	}
 
 	@Override
@@ -593,14 +667,22 @@ public class HAResultSet extends AbstractJdbcResultSet<HAStatement, HAResultSetM
 		return metadata;
 	}
 
-	@Override
-	public Object getObject(int columnIndex) throws SQLException {
+	private Object getRawObject(int columnIndex) throws SQLException {
 		Object[] currentRow = getCurrentRow();
 		if (columnIndex < 1 || columnIndex > currentRow.length) {
 			throw new HAException("Column index " + columnIndex + " is beyond range (1-" + currentRow.length + ")");
 		}
 		Object value = currentRow[columnIndex - 1];
 		wasNull = (value == null);
+		return value;
+	}
+
+	@Override
+	public Object getObject(int columnIndex) throws SQLException {
+		Object value = getRawObject(columnIndex);
+		if (value instanceof Instant) {
+			return Timestamp.from((Instant) value);
+		}
 		return value;
 	}
 
@@ -616,9 +698,12 @@ public class HAResultSet extends AbstractJdbcResultSet<HAStatement, HAResultSetM
 		if (type == null) {
 			throw new HAException("Target type must not be null");
 		}
-		Object raw = getObject(columnIndex);
+		Object raw = getRawObject(columnIndex);
 		if (raw == null) {
 			return null;
+		}
+		if (type == Object.class) {
+			return (T) getObject(columnIndex);
 		}
 		if (type.isInstance(raw)) {
 			return type.cast(raw);
@@ -681,6 +766,10 @@ public class HAResultSet extends AbstractJdbcResultSet<HAStatement, HAResultSetM
 		if (type == OffsetDateTime.class) {
 			Timestamp ts = getTimestamp(columnIndex);
 			return ts == null ? null : (T) ts.toInstant().atZone(ZoneId.systemDefault()).toOffsetDateTime();
+		}
+		if (type == ZonedDateTime.class) {
+			Timestamp ts = getTimestamp(columnIndex);
+			return ts == null ? null : (T) ts.toInstant().atZone(ZoneId.systemDefault());
 		}
 		throw new HAException("Conversion to " + type.getName() + " is not supported");
 	}

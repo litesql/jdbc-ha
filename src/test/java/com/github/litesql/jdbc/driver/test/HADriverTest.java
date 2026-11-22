@@ -325,16 +325,56 @@ public class HADriverTest {
 				assertEquals("xyz", rs.getString("reader_col"));
 			}
 
-			// Protobuf google.protobuf.Timestamp (Instant) -> getTimestamp / getDate / getTime
+			// Protobuf TypedValue VALUE_TYPE_TIMESTAMP (go-ha time.UTC().UnixNano() in int64_val)
 			try (Statement st = conn.createStatement();
 					ResultSet rs = st.executeQuery("SELECT PROTO_TIMESTAMP_TEST")) {
+				assertEquals(Types.TIMESTAMP, rs.getMetaData().getColumnType(1));
+				assertEquals(Timestamp.class.getName(), rs.getMetaData().getColumnClassName(1));
 				assertTrue(rs.next());
+
+				// Column 1: full nanosecond precision & JDBC getObject() returning java.sql.Timestamp
+				Instant expectedInstant = Instant.parse("2026-11-17T12:34:56.789123456Z");
+				Object rawObj = rs.getObject(1);
+				assertTrue(rawObj instanceof Timestamp);
+				assertEquals(expectedInstant, ((Timestamp) rawObj).toInstant());
 				Timestamp ts = rs.getTimestamp(1);
-				assertEquals(Instant.parse("2026-11-17T12:34:56.789Z"), ts.toInstant());
+				assertEquals(expectedInstant, ts.toInstant());
+				assertEquals(789123456, ts.getNanos());
+				assertEquals(expectedInstant, rs.getObject(1, Instant.class));
 				Date d = rs.getDate(1);
 				assertNotNull(d);
 				Time t = rs.getTime(1);
 				assertNotNull(t);
+
+				// Column 2: DATE scanned by Go SQLite as 2026-11-17T00:00:00Z must NOT shift to 2026-11-16 in negative UTC offsets
+				assertEquals(Date.valueOf("2026-11-17"), rs.getDate("date_col"));
+				assertEquals(LocalDate.of(2026, 11, 17), rs.getObject("date_col", LocalDate.class));
+
+				// Column 3: pre-1970 negative UnixNano
+				Instant expectedPreEpoch = Instant.parse("1969-12-31T23:59:59.123456789Z");
+				assertEquals(expectedPreEpoch, rs.getTimestamp("pre_epoch_col").toInstant());
+			}
+
+			// SQLite / Go text timestamp & date formats (space before offset, short offset, Go time.Time.String(), setDate)
+			try (Statement st = conn.createStatement()) {
+				st.execute("CREATE TABLE datetime_formats_test (id INT, d_col TEXT, ts_space_off TEXT, ts_short_off TEXT, ts_go_str TEXT)");
+			}
+			try (PreparedStatement ps = conn.prepareStatement(
+					"INSERT INTO datetime_formats_test VALUES (?, ?, ?, ?, ?)")) {
+				ps.setInt(1, 1);
+				ps.setDate(2, Date.valueOf("2026-11-17"));
+				ps.setString(3, "2026-11-17 10:15:30 -03:00");
+				ps.setString(4, "2026-11-17 13:15:30+00");
+				ps.setString(5, "2026-11-17 10:15:30.123456789 -0300 -03 m=+0.005");
+				assertEquals(1, ps.executeUpdate());
+			}
+			try (Statement st = conn.createStatement();
+					ResultSet rs = st.executeQuery("SELECT * FROM datetime_formats_test WHERE d_col = '2026-11-17'")) {
+				assertTrue(rs.next());
+				assertEquals(Date.valueOf("2026-11-17"), rs.getDate("d_col"));
+				assertEquals(Instant.parse("2026-11-17T13:15:30Z"), rs.getTimestamp("ts_space_off").toInstant());
+				assertEquals(Instant.parse("2026-11-17T13:15:30Z"), rs.getTimestamp("ts_short_off").toInstant());
+				assertEquals(Instant.parse("2026-11-17T13:15:30.123456789Z"), rs.getTimestamp("ts_go_str").toInstant());
 			}
 
 			// Duplicate column names: findColumn must return the FIRST column index (1)
